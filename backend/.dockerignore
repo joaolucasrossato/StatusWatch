@@ -1,8 +1,16 @@
 .venv
 __pycache__
 *.pyc
+*.pyo
+*.pyd
 .pytest_cache
+tests
+requirements-dev.txt
+
 .env
 .env.*
+
 .git
-tests
+.gitignore
+
+README.md

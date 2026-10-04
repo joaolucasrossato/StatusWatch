@@ -1,0 +1,149 @@
+name: statuswatch-prod
+
+x-backend: &backend
+  build:
+    context: ./backend
+    dockerfile: Dockerfile.prod
+
+  environment:
+    APP_NAME: ${APP_NAME:-StatusWatch}
+    APP_ENV: ${APP_ENV:-production}
+    DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be configured}
+    REDIS_URL: ${REDIS_URL:?REDIS_URL must be configured}
+
+  restart: unless-stopped
+
+  depends_on:
+    db:
+      condition: service_healthy
+
+    redis:
+      condition: service_healthy
+
+  networks:
+    - backend
+
+
+services:
+
+  db:
+    image: postgres:17-alpine
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-statuswatch}
+      POSTGRES_USER: ${POSTGRES_USER:-statuswatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be configured}
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      - backend
+
+
+  redis:
+    image: redis:7.4-alpine
+
+    restart: unless-stopped
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - backend
+
+
+  api:
+    <<: *backend
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=10)"
+        ]
+      interval: 15s
+      timeout: 12s
+      retries: 3
+      start_period: 15s
+
+
+  worker:
+    <<: *backend
+
+    command:
+      [
+        "python",
+        "-m",
+        "app.worker"
+      ]
+
+    stop_grace_period: 15s
+
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:8080:80"
+
+    depends_on:
+      api:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O - http://127.0.0.1/healthz | grep -q '^ok'"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - frontend
+      - backend
+
+
+volumes:
+
+  postgres_data:
+    name: statuswatch_prod_postgres_data
+
+
+networks:
+
+  frontend:
+    driver: bridge
+
+  backend:
+    driver: bridge
