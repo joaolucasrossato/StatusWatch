@@ -1,4 +1,4 @@
-# StatusWatch · v0.1.0
+# StatusWatch · v0.2.0
 
 Fundação de uma plataforma de monitoramento de aplicações, APIs e servidores. Projeto de portfólio focado em backend, DevOps, observabilidade e SRE, com evolução futura para Kubernetes.
 
