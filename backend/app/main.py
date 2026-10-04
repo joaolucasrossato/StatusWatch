@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request, Response
 
 from app.api.routes.auth import router as auth_router
+from app.api.routes.monitors import router as monitors_router
 
 from app.core.config import get_settings
 from app.core.dependencies import Dependencies
@@ -27,8 +28,9 @@ async def lifespan(app: FastAPI):
         logger.info("%s API stopped", settings.app_name)
 
 
-app = FastAPI(title="StatusWatch API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="StatusWatch API", version="0.3.0", lifespan=lifespan)
 app.include_router(auth_router)
+app.include_router(monitors_router)
 
 
 def get_dependencies(request: Request) -> Dependencies:
@@ -37,7 +39,7 @@ def get_dependencies(request: Request) -> Dependencies:
 
 @app.get("/")
 def root() -> dict[str, str]:
-    return {"name": "StatusWatch", "version": "0.2.0"}
+    return {"name": "StatusWatch", "version": "0.3.0"}
 
 
 @app.get("/health", responses={503: {"description": "Dependency unavailable"}})

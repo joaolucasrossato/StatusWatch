@@ -1,4 +1,4 @@
-# Arquitetura v0.1.0
+# Arquitetura v0.3.0
 
 ```text
 Browser → web:5173 (Vite /api proxy) → api:8000 (FastAPI)
@@ -13,4 +13,6 @@ O worker usa as mesmas configurações e conexões, valida ambas na inicializaç
 
 Compose aguarda os healthchecks do PostgreSQL e Redis antes de iniciar API/worker; web aguarda a API. Essa ordenação vale para a inicialização, não reinicia consumidores quando uma dependência falha posteriormente. A API reflete falhas em `/health` e pode voltar a responder saudável após a recuperação.
 
-A rede bridge é privada ao projeto, com apenas web e API publicados no loopback do host. O volume `postgres_data` persiste o PostgreSQL. Redis não exige persistência nesta versão. Vite é usado para desenvolvimento, inclusive no container; publicação de produção fica para outra etapa.
+A rede bridge é privada ao projeto, com apenas web e API publicados no loopback do host. O volume `postgres_data` persiste o PostgreSQL. Redis não exige persistência nesta versão. Vite é usado para desenvolvimento. Em produção, Nginx serve o bundle React e encaminha /api à API privada. Somente o frontend é publicado no loopback.
+
+A autenticação usa JWT e Argon2. Sessions ORM síncronas são injetadas por request. Alembic cria users e monitors; cada monitor pertence a um usuário, e todas as consultas CRUD aplicam ownership. O frontend mantém o token em memória. Monitores são apenas configurações: não há execução de checks nesta versão.
