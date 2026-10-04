@@ -1,6 +1,6 @@
 # StatusWatch · v0.4.0
 
-Fundação de uma plataforma de monitoramento de aplicações, APIs e servidores. Projeto de portfólio focado em backend, DevOps, observabilidade e SRE, com evolução futura para Kubernetes.
+Plataforma de monitoramento de aplicações, APIs e servidores. Projeto de portfólio focado em backend, DevOps, observabilidade e SRE, com evolução futura para Kubernetes.
 
 Esta versão entrega o HTTP Monitoring Engine: checks GET assíncronos, UP/DOWN, código HTTP, tempo de resposta, timeout, proteção SSRF com pinagem de IP, scheduler persistido e concorrência limitada. Preserva autenticação JWT e CRUD de monitores.
 
