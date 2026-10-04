@@ -1,0 +1,86 @@
+name: statuswatch
+
+x-backend: &backend
+  build: ./backend
+  environment:
+    APP_NAME: ${APP_NAME:-StatusWatch}
+    APP_ENV: ${APP_ENV:-development}
+    DATABASE_URL: ${DATABASE_URL:?Copy .env.example to .env and configure DATABASE_URL}
+    REDIS_URL: ${REDIS_URL:?Configure REDIS_URL in .env}
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  networks:
+    - statuswatch
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: statuswatch-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-statuswatch}
+      POSTGRES_USER: ${POSTGRES_USER:-statuswatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - statuswatch
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: statuswatch-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - statuswatch
+
+  api:
+    <<: *backend
+    container_name: statuswatch-api
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=10)"]
+      interval: 15s
+      timeout: 12s
+      retries: 3
+      start_period: 15s
+
+  worker:
+    <<: *backend
+    container_name: statuswatch-worker
+    command: ["python", "-m", "app.worker"]
+    stop_grace_period: 15s
+
+  web:
+    build: ./frontend
+    container_name: statuswatch-web
+    environment:
+      API_PROXY_TARGET: http://api:8000
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - statuswatch
+
+volumes:
+  postgres_data:
+
+networks:
+  statuswatch:
+    driver: bridge
