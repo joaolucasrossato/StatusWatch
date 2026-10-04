@@ -7,6 +7,9 @@ x-backend: &backend
     APP_ENV: ${APP_ENV:-development}
     DATABASE_URL: ${DATABASE_URL:?Copy .env.example to .env and configure DATABASE_URL}
     REDIS_URL: ${REDIS_URL:?Configure REDIS_URL in .env}
+    JWT_SECRET: ${JWT_SECRET:?Configure JWT_SECRET in .env}
+    JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+    ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
   depends_on:
     db:
       condition: service_healthy

@@ -1,0 +1,12 @@
+x-backend: &backend
+  build: ./backend
+
+  environment:
+    APP_NAME: ${APP_NAME:-StatusWatch}
+    APP_ENV: ${APP_ENV:-development}
+    DATABASE_URL: ${DATABASE_URL:?Configure DATABASE_URL}
+    REDIS_URL: ${REDIS_URL:?Configure REDIS_URL}
+
+    JWT_SECRET: ${JWT_SECRET:?Configure JWT_SECRET in .env}
+    JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+    ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}

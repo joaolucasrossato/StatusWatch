@@ -22,6 +22,9 @@ COPY app ./app
 
 RUN chown -R statuswatch:statuswatch /app
 
+COPY alembic.ini .
+COPY alembic ./alembic
+
 USER statuswatch
 
 EXPOSE 8000
