@@ -1,18 +1,21 @@
-# Arquitetura v0.3.0
+# Arquitetura v0.4.0
 
 ```text
-Browser → web:5173 (Vite /api proxy) → api:8000 (FastAPI)
-                                       ├── db:5432 (PostgreSQL 17)
-                                       └── redis:6379 (Redis 7.4)
-worker (Python) ────────────────────────┴── mesmas dependências
+Usuário → React/Vite ou Nginx → FastAPI → PostgreSQL
+                                  │         ↑
+                                Redis       │
+                                            │
+Worker → scheduler → checker HTTP → MonitorCheck
+                           ↓
+                     Destino público
 ```
 
-A API mantém um pool SQLAlchemy e um cliente Redis por processo, criados no lifespan e fechados no encerramento. `/health` executa `SELECT 1` e `PING` a cada chamada, sem cache. As operações síncronas da rota são executadas pelo FastAPI em seu pool de threads. Conexão, pool e query têm limites de tempo. Respostas e logs de falha não expõem URLs ou credenciais.
+API mantém JWT/Argon2 e CRUD com ownership. SQLAlchemy é síncrono; API usa pool de threads do FastAPI e worker usa operações curtas via asyncio.to_thread, sem banco aberto durante rede. Alembic registra User, Monitor e MonitorCheck pelo registry de models.
 
-O worker usa as mesmas configurações e conexões, valida ambas na inicialização e permanece bloqueado em `Event.wait()`. SIGTERM/SIGINT liberam a espera e fecham as conexões. Falha inicial de dependência encerra o processo com código 1. O worker não consome filas, não verifica URLs e não anuncia saúde contínua das dependências.
+Worker é processo separado, valida PostgreSQL/Redis no startup, mantém AsyncClient e agenda checks pela última data persistida. Concorrência limitada e shutdown por SIGTERM/SIGINT. Redis continua disponível com health probe, sem queue. Somente uma réplica de scheduler; múltiplas réplicas podem duplicar checks.
 
-Compose aguarda os healthchecks do PostgreSQL e Redis antes de iniciar API/worker; web aguarda a API. Essa ordenação vale para a inicialização, não reinicia consumidores quando uma dependência falha posteriormente. A API reflete falhas em `/health` e pode voltar a responder saudável após a recuperação.
+Produção usa Nginx como gateway /api, API/db/Redis privados. Rede bridge com saída permite checks externos. Compose aguarda dependências saudáveis no startup; healthchecks não representam saúde contínua do scheduler. Não há endpoint HTTP no worker.
 
-A rede bridge é privada ao projeto, com apenas web e API publicados no loopback do host. O volume `postgres_data` persiste o PostgreSQL. Redis não exige persistência nesta versão. Vite é usado para desenvolvimento. Em produção, Nginx serve o bundle React e encaminha /api à API privada. Somente o frontend é publicado no loopback.
+Frontend mantém JWT em memória e distingue configuração Active/Paused de resultado UP/DOWN/Pending. O painel System Status continua medindo a saúde da própria plataforma.
 
-A autenticação usa JWT e Argon2. Sessions ORM síncronas são injetadas por request. Alembic cria users e monitors; cada monitor pertence a um usuário, e todas as consultas CRUD aplicam ownership. O frontend mantém o token em memória. Monitores são apenas configurações: não há execução de checks nesta versão.
+Fluxos, segurança SSRF, dados, consultas e limites: [monitoring-engine.md](monitoring-engine.md).

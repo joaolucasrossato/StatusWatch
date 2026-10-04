@@ -8,3 +8,7 @@ alembic
 PyJWT
 pwdlib[argon2]
 email-validator
+
+httpx==0.28.1
+# Pin the transport supporting the SNI extension used by IP-pinned checks.
+httpcore==1.0.9

@@ -1,0 +1,102 @@
+import asyncio
+import logging
+import uuid
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
+
+import httpx
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.models import Monitor, MonitorCheck
+from app.monitoring.checker import CheckResult, check_http
+
+logger = logging.getLogger(__name__)
+SessionFactory = Callable[[], Session]
+
+
+@dataclass(frozen=True)
+class MonitorJob:
+    id: uuid.UUID
+    url: str
+    timeout_seconds: int
+    interval_seconds: int
+
+
+def is_due(active: bool, latest: datetime | None, interval: int, now: datetime) -> bool:
+    if not active:
+        return False
+    # SQLite test adapter strips timezone; PostgreSQL returns aware timestamps.
+    if latest is not None and latest.tzinfo is None:
+        latest = latest.replace(tzinfo=timezone.utc)
+    return latest is None or now >= latest + timedelta(seconds=interval)
+
+
+def due_monitors(sessions: SessionFactory, now: datetime) -> list[MonitorJob]:
+    latest = select(MonitorCheck.monitor_id, func.max(MonitorCheck.checked_at).label("at")).group_by(
+        MonitorCheck.monitor_id,
+    ).subquery()
+    with sessions() as db:
+        rows = db.execute(select(Monitor, latest.c.at).outerjoin(
+            latest, Monitor.id == latest.c.monitor_id,
+        ).where(Monitor.is_active.is_(True)))
+        return [MonitorJob(m.id, m.url, m.timeout_seconds, m.interval_seconds)
+                for m, at in rows if is_due(m.is_active, at, m.interval_seconds, now)]
+
+
+def still_active(sessions: SessionFactory, job: MonitorJob) -> bool:
+    with sessions() as db:
+        return db.scalar(select(Monitor.id).where(
+            Monitor.id == job.id, Monitor.is_active.is_(True), Monitor.url == job.url,
+            Monitor.timeout_seconds == job.timeout_seconds,
+            Monitor.interval_seconds == job.interval_seconds,
+        )) is not None
+
+
+def persist_check(sessions: SessionFactory, job: MonitorJob, result: CheckResult) -> bool:
+    # The lock serializes with pause/delete; no transaction spans network I/O.
+    with sessions() as db, db.begin():
+        monitor = db.scalar(select(Monitor).where(Monitor.id == job.id).with_for_update())
+        if (monitor is None or not monitor.is_active or monitor.url != job.url
+                or monitor.timeout_seconds != job.timeout_seconds
+                or monitor.interval_seconds != job.interval_seconds):
+            return False
+        db.add(MonitorCheck(monitor_id=job.id, checked_at=datetime.now(timezone.utc), **asdict(result)))
+    return True
+
+
+async def run_cycle(sessions: SessionFactory, client: httpx.AsyncClient, concurrency: int,
+                    max_redirects: int) -> None:
+    jobs = await asyncio.to_thread(due_monitors, sessions, datetime.now(timezone.utc))
+    logger.debug("Scheduler cycle due=%s", len(jobs))
+    # A fixed number of consumers bounds tasks as well as network concurrency.
+    iterator = iter(jobs)
+
+    async def consume() -> None:
+        for job in iterator:
+            try:
+                if not await asyncio.to_thread(still_active, sessions, job):
+                    continue
+                logger.debug("Monitor check started monitor_id=%s", job.id)
+                result = await check_http(client, job.url, job.timeout_seconds, max_redirects)
+                saved = await asyncio.to_thread(persist_check, sessions, job, result)
+                logger.info("Monitor check completed monitor_id=%s status=%s error_type=%s saved=%s",
+                            job.id, result.status, result.error_type, saved)
+            except Exception as exc:
+                logger.error("Monitor check failed monitor_id=%s class=%s", job.id, type(exc).__name__)
+
+    await asyncio.gather(*(consume() for _ in range(min(concurrency, len(jobs)))))
+
+
+async def scheduler_loop(sessions: SessionFactory, client: httpx.AsyncClient, stop: asyncio.Event,
+                         concurrency: int, poll_seconds: float, max_redirects: int) -> None:
+    while not stop.is_set():
+        try:
+            await run_cycle(sessions, client, concurrency, max_redirects)
+        except Exception as exc:
+            logger.error("Scheduler cycle failed class=%s", type(exc).__name__)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=poll_seconds)
+        except TimeoutError:
+            continue

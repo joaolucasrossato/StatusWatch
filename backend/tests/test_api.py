@@ -4,7 +4,7 @@ import pytest
 def test_root(client):
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {"name": "StatusWatch", "version": "0.3.0"}
+    assert response.json() == {"name": "StatusWatch", "version": "0.4.0"}
 
 
 def test_health_healthy(client):
