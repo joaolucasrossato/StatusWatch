@@ -15,3 +15,53 @@ h2 { margin: 0 0 22px; font-size: 12px; color: #a5b6c6; font-weight: 500; text-t
 .status-note { color: #97a8b9; font-size: 13px; line-height: 1.6; margin-bottom: 0; }
 footer { margin-top: auto; padding: 24px 0; border-top: 1px solid #25323e; display: flex; justify-content: space-between; color: #8295a7; font-size: 11px; letter-spacing: .1em; }
 @media (max-width: 480px) { .brand { padding-top: 28px; } .intro { margin-top: 28px; } .status-card { padding: 20px; } }
+
+.splash { width: min(100% - 48px, 1240px); }
+.brand { padding: 28px 0; }
+h1 { font-size: clamp(30px, 4vw, 44px); margin: 12px 0 20px; }
+h2 { font-size: 18px; text-transform: none; letter-spacing: -.02em; color: #e5edf4; }
+button, input, select { font: inherit; }
+button { padding: 9px 13px; border: 1px solid #3c5062; border-radius: 6px; color: #e5edf4; background: #1a2937; cursor: pointer; }
+button:hover:not(:disabled) { background: #294052; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { background: #63d9b5; border-color: #63d9b5; color: #082b21; font-weight: 650; }
+button.primary:hover:not(:disabled) { background: #8be8cd; }
+:focus-visible { outline: 2px solid #8be8cd; outline-offset: 3px; }
+.panel { padding: 26px; background: #121d27; border: 1px solid #2a3947; border-radius: 12px; margin: 20px 0; }
+.auth-panel { width: min(100%, 460px); margin: 24px auto 44px; }
+.muted { color: #a2b3c3; line-height: 1.6; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+label { display: flex; flex-direction: column; gap: 9px; margin: 16px 0; font-size: 14px; color: #bacbd9; }
+input, select { min-width: 0; width: 100%; color: #e5edf4; background: #0d141c; border: 1px solid #405366; border-radius: 6px; padding: 11px 12px; }
+input::placeholder { color: #8195a8; }
+.auth-panel .primary { width: 100%; margin-top: 20px; }
+.text-button { background: none; border: 0; font-size: 13px; margin-top: 18px; padding-left: 0; color: #8be8cd; }
+.account { display: flex; justify-content: flex-end; align-items: center; gap: 16px; color: #a2b3c3; }
+.page-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-top: 32px; }
+.page-heading h1 { margin-bottom: 0; }
+.version-note { color: #a2b3c3; font-size: 14px; line-height: 1.6; border-left: 2px solid #506a80; padding: 10px 16px; margin: 26px 0; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
+.checkbox { flex-direction: row; align-items: center; }
+.checkbox input { width: 18px; height: 18px; accent-color: #63d9b5; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.error { color: #ffc2bc; background: #362329; border-radius: 6px; padding: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.success { color: #8be8cd; }
+.danger-text { color: #ffb3ad; }
+button.danger { background: #783b43; border-color: #a96268; }
+.empty { text-align: center; padding: 52px 24px; }
+.empty-icon { display: inline-block; font-size: 32px; color: #63d9b5; margin-bottom: 22px; }
+.table-wrap { padding: 0; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+th { color: #91a6b9; font-size: 12px; font-weight: 500; padding: 18px; background: #15222e; }
+td { padding: 22px 18px; border-top: 1px solid #293845; }
+td:not(:first-child) { white-space: nowrap; }
+td:first-child { min-width: 200px; }
+.monitor-url { display: block; color: #99aebe; font-size: 12px; margin-top: 8px; overflow-wrap: anywhere; max-width: 360px; }
+.badge { border-radius: 20px; padding: 5px 10px; font-size: 12px; }
+.badge.active { color: #8be8cd; background: #193b33; }
+.badge.paused { color: #c2cddd; background: #2b3546; }
+.status-card { padding: 18px 24px; margin-top: 36px; max-width: none; }
+.status-card h2 { font-size: 12px; margin-bottom: 12px; }
+.status-card .status { font-size: 14px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 640px) { .splash { width: calc(100% - 28px); } .form-grid { grid-template-columns: 1fr; } .page-heading { align-items: flex-start; flex-direction: column; } .panel { padding: 20px; } .table-wrap { padding: 0; } }

@@ -1,8 +1,10 @@
-# StatusWatch · v0.2.0
+# StatusWatch · v0.3.0
 
 Fundação de uma plataforma de monitoramento de aplicações, APIs e servidores. Projeto de portfólio focado em backend, DevOps, observabilidade e SRE, com evolução futura para Kubernetes.
 
-Esta versão entrega a integração entre frontend, API, PostgreSQL, Redis e um processo worker. Não realiza monitoramento de URLs nem possui cadastro de monitores.
+Esta versão entrega autenticação JWT e gerenciamento de monitores por usuário, integrado ao frontend, PostgreSQL e Redis. O worker existente continua apenas validando dependências.
+
+**HTTP checks are not executed yet. Monitoring execution will be introduced in v0.4.**
 
 ## Arquitetura e stack
 
@@ -55,7 +57,10 @@ Na raiz:
 ```bash
 cp .env.example .env
 # Edite .env antes de usar credenciais diferentes das de exemplo.
-docker compose config
+docker compose config --quiet
+docker compose build api worker
+docker compose up -d db redis
+docker compose run --rm api alembic upgrade head
 docker compose up --build
 ```
 
@@ -79,11 +84,14 @@ Os containers são `statuswatch-web`, `statuswatch-api`, `statuswatch-worker`, `
 | `POSTGRES_PASSWORD` | Senha inicial do PostgreSQL |
 | `DATABASE_URL` | URL SQLAlchemy com driver `postgresql+psycopg` |
 | `REDIS_URL` | URL Redis |
+| `JWT_SECRET` | Secret JWT obrigatório; use valor aleatório e diferente por ambiente |
+| `JWT_ALGORITHM` | Algoritmo JWT, padrão HS256 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Validade do token, padrão 60 minutos |
 | `API_PROXY_TARGET` | Destino do proxy Vite; definido no Compose como `http://api:8000` |
 
 `change_me` é apenas um placeholder de desenvolvimento. Mantenha a senha de `DATABASE_URL` consistente com `POSTGRES_PASSWORD`. Caracteres especiais na URL precisam de percent-encoding. `.env` é ignorado pelo Git e não entra nas imagens. Não compartilhe a saída de `docker compose config` com valores reais, pois ela contém as variáveis resolvidas.
 
-Entre containers, os hosts são `db`, `redis` e `api`, nunca localhost. `Settings` centraliza a configuração; variáveis do processo têm precedência sobre `.env` no diretório de execução. Nenhuma tabela de negócio é criada nesta versão.
+Entre containers, os hosts são `db`, `redis` e `api`, nunca localhost. `Settings` centraliza as variáveis do processo; Docker Compose carrega o `.env` e as injeta nos containers. As tabelas `users` e `monitors` são criadas por migrations Alembic, aplicadas explicitamente antes de iniciar a aplicação.
 
 ## Desenvolvimento local
 
@@ -116,10 +124,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 export DATABASE_URL='postgresql+psycopg://statuswatch:change_me@127.0.0.1:5432/statuswatch'
 export REDIS_URL='redis://127.0.0.1:6379/0'
+# Defina JWT_SECRET com um valor aleatório local antes de executar.
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-Adapte as credenciais à configuração do banco. A `.venv` é criada manualmente pelo desenvolvedor, nunca pelo projeto, e não é versionada. No Windows/PowerShell, ative com `.venv\Scripts\Activate.ps1` e defina variáveis com `$env:DATABASE_URL = '...'` e `$env:REDIS_URL = '...'`. Também é possível criar `backend/.env` com as URLs locais; ele é ignorado pelo Git.
+Adapte as credenciais à configuração do banco. A `.venv` é criada manualmente pelo desenvolvedor, nunca pelo projeto, e não é versionada. No Windows/PowerShell, ative com `.venv\Scripts\Activate.ps1` e defina variáveis com `$env:DATABASE_URL = '...'` e `$env:REDIS_URL = '...'`. Fora do Compose, exporte também JWT_SECRET no terminal; não use secrets reais em comandos versionados.
 
 Em outro terminal, com o mesmo ambiente e variáveis:
 
@@ -145,7 +155,7 @@ O proxy local usa `http://127.0.0.1:8000`. Para outro destino, defina `API_PROXY
 
 | Método | Caminho | Resposta |
 | --- | --- | --- |
-| GET | `/` | 200: `{"name":"StatusWatch","version":"0.1.0"}` |
+| GET | `/` | 200: `{"name":"StatusWatch","version":"0.3.0"}` |
 | GET | `/health` | 200 saudável; 503 se PostgreSQL ou Redis falhar |
 
 Exemplo saudável:
@@ -211,4 +221,33 @@ docker compose down
 
 ## Roadmap
 
-Apenas a v0.1.0 está implementada. Evoluções futuras, sem código antecipado nesta entrega: cadastro de monitores e checks HTTP, filas/agendamento, incidentes e notificações, autenticação, observabilidade, SLOs e infraestrutura Kubernetes. A ordem e as versões serão definidas nas próximas etapas.
+Implementado: v0.1 infraestrutura, v0.2 autenticação e v0.3 gerenciamento de monitores. A v0.4 introduzirá execução de checks HTTP com proteção SSRF. Agendamento, histórico, incidentes, notificações, observabilidade, SLOs e Kubernetes permanecem fora desta entrega.
+
+
+## Monitor Management
+
+- Create monitor, list monitors, get monitor, update monitor e delete monitor.
+- Per-user ownership: JWT obrigatório e isolamento por usuário; recursos alheios retornam 404.
+- URL validation: somente HTTP/HTTPS; method GET.
+- Configurable check interval: 30, 60, 300 ou 600 segundos.
+- Configurable timeout: 1–30 segundos, padrão 10.
+- Active/paused configuration: habilitação da configuração, sem indicar disponibilidade do serviço.
+
+A interface permite cadastro, login, adicionar/editar monitores, pausar/ativar e excluir com confirmação. O Bearer token fica somente em memória; recarregar a página exige novo login. Não há JWT nem secrets no bundle. Os estados de loading, lista vazia e erros são exibidos na página. O painel System Status continua consultando exclusivamente a saúde da própria API e suas dependências.
+
+| Método | Caminho | Sucesso |
+| --- | --- | --- |
+| POST | `/auth/register` | 201 |
+| POST | `/auth/login` | 200 |
+| GET | `/auth/me` | 200 |
+| POST | `/monitors` | 201 |
+| GET | `/monitors` | 200 |
+| GET | `/monitors/{id}` | 200 |
+| PATCH | `/monitors/{id}` | 200 |
+| DELETE | `/monitors/{id}` | 204 sem body |
+
+Contrato completo: [docs/monitors.md](docs/monitors.md). Autenticação: [docs/authentication.md](docs/authentication.md). Evidências v0.3: [docs/validation-v0.3.md](docs/validation-v0.3.md).
+
+### Produção
+
+Use `docker compose --env-file .env.production -f compose.prod.yaml`, configurando secrets exclusivos de produção. Execute `build`, `run --rm api alembic upgrade head` e `up -d --wait` com esses mesmos argumentos. O Nginx serve o frontend na porta local 8080 e encaminha `/api/` à API privada. PostgreSQL e Redis não publicam portas. Nunca execute downgrade no banco real para testar migrations; o teste em `backend/tests/validate_migrations.py` cria um banco descartável separado e exige CREATEDB.

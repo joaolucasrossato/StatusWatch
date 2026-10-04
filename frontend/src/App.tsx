@@ -1,9 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
+import { AuthForm } from './AuthForm'
+import { Monitors } from './Monitors'
+import type { User } from './api'
 
 type Status = 'checking' | 'online' | 'offline'
 
 function App() {
+  const [session, setSession] = useState<{ token: string; user: User } | null>(null)
+  const [expired, setExpired] = useState(false)
+  const onExpired = useCallback(() => { setSession(null); setExpired(true) }, [])
   const [status, setStatus] = useState<Status>('checking')
 
   useEffect(() => {
@@ -45,11 +51,9 @@ function App() {
         </svg>
         <span>STATUSWATCH</span>
       </header>
-      <div className="intro">
-        <p className="eyebrow">A foundation for reliability</p>
-        <h1>Application<br />Monitoring Platform</h1>
-        <p className="description">O primeiro passo para acompanhar a saúde das suas aplicações, APIs e servidores.</p>
-      </div>
+      {session && <div className="account"><span>{session.user.full_name}</span><button onClick={() => setSession(null)}>Sign out</button></div>}
+      {expired && <p role="alert" className="error">Your session is no longer valid. Please sign in again.</p>}
+      {session ? <Monitors token={session.token} onExpired={onExpired} /> : <AuthForm onLogin={(token, user) => { setSession({ token, user }); setExpired(false) }} />}
       <section className="status-card" aria-labelledby="status-title">
         <h2 id="status-title">System Status</h2>
         <p className={`status ${status}`} role="status" aria-live="polite">
@@ -62,7 +66,7 @@ function App() {
             : 'Disponibilidade da API e de suas dependências. Atualização automática.'}
         </p>
       </section>
-      <footer><span>STATUSWATCH</span><span>v0.1.0</span></footer>
+      <footer><span>STATUSWATCH</span><span>v0.3.0</span></footer>
     </main>
   )
 }

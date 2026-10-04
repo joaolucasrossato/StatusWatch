@@ -1,3 +1,10 @@
+import os
+
+# Isolated test configuration; never load developer credentials.
+os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["REDIS_URL"] = "redis://localhost/15"
+os.environ["JWT_SECRET"] = "statuswatch-test-only-secret-not-for-deployment"
+
 from unittest.mock import Mock
 
 import pytest
@@ -23,3 +30,42 @@ def client(dependencies):
     finally:
         with_override.close()
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def db(client):
+    from sqlalchemy import create_engine, event
+    from sqlalchemy.orm import Session
+    from sqlalchemy.pool import StaticPool
+    from app.db.base import Base
+    from app.db.session import get_db
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _record):
+        connection.execute("PRAGMA foreign_keys=ON")
+
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        def override_db():
+            yield session
+        app.dependency_overrides[get_db] = override_db
+        yield session
+    app.dependency_overrides.pop(get_db, None)
+    engine.dispose()
+
+
+@pytest.fixture
+def accounts(client, db):
+    result = []
+    for name in ("alice", "bob"):
+        credentials = {"email": f"{name}@example.com", "password": "test-password-only-123"}
+        response = client.post("/auth/register", json={**credentials, "full_name": name.title()})
+        assert response.status_code == 201
+        user = response.json()
+        token = client.post("/auth/login", json=credentials)
+        assert token.status_code == 200
+        headers = {"Authorization": f"Bearer {token.json()['access_token']}"}
+        result.append((user, headers))
+    return result
