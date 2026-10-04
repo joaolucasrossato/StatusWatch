@@ -3,8 +3,12 @@ export type MonitorInput = {
   name: string; url: string; method: 'GET'; interval_seconds: number
   timeout_seconds: number; is_active: boolean
 }
+export type MonitorCheck = {
+  status: 'UP' | 'DOWN'; http_status_code: number | null; response_time_ms: number | null
+  error_type: string | null; error_message: string | null; checked_at: string
+}
 export type Monitor = MonitorInput & {
-  id: string; user_id: string; created_at: string; updated_at: string
+  id: string; user_id: string; created_at: string; updated_at: string; latest_check: MonitorCheck | null
 }
 
 export class ApiError extends Error {

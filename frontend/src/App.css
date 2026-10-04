@@ -65,3 +65,6 @@ td:first-child { min-width: 200px; }
 .status-card .status { font-size: 14px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 640px) { .splash { width: calc(100% - 28px); } .form-grid { grid-template-columns: 1fr; } .page-heading { align-items: flex-start; flex-direction: column; } .panel { padding: 20px; } .table-wrap { padding: 0; } }
+
+.badge.down { color: #ffc2bc; background: #482930; }
+.check-details { display: flex; flex-direction: column; gap: 5px; margin-top: 12px; color: #99aebe; font-size: 12px; white-space: normal; min-width: 175px; }

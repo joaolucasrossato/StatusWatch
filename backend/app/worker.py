@@ -1,40 +1,62 @@
+import asyncio
 import logging
 import signal
-from threading import Event
+
+from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
 from app.core.dependencies import Dependencies
 from app.core.logging import configure_logging
+from app.monitoring.checker import create_client
+from app.monitoring.scheduler import scheduler_loop
 
 logger = logging.getLogger(__name__)
 
 
-def main() -> int:
-    configure_logging()
-    stop = Event()
-
-    def request_shutdown(signum: int, _frame: object) -> None:
-        logger.info("Shutdown requested (signal %s)", signum)
-        stop.set()
-
-    signal.signal(signal.SIGTERM, request_shutdown)
-    signal.signal(signal.SIGINT, request_shutdown)
-    logger.info("StatusWatch Worker starting...")
-    dependencies = Dependencies(get_settings())
+async def run_worker() -> int:
+    settings = get_settings()
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, stop.set)
+    dependencies = Dependencies(settings)
     try:
-        services = dependencies.check()
+        services = await asyncio.to_thread(dependencies.check)
         for name, status in services.items():
-            label = "PostgreSQL" if name == "database" else "Redis"
-            logger.info("%s connection: %s", label, "OK" if status == "healthy" else "FAILED")
+            logger.info("%s connection: %s", name, status)
         if any(status != "healthy" for status in services.values()):
             logger.error("Worker cannot start: dependencies unavailable")
             return 1
-        logger.info("StatusWatch Worker ready.")
-        stop.wait()
+        sessions = sessionmaker(bind=dependencies.database, expire_on_commit=False)
+        async with create_client(settings.worker_max_concurrency) as client:
+            logger.info("StatusWatch Worker ready.")
+            scheduler = asyncio.create_task(scheduler_loop(
+                sessions, client, stop, settings.worker_max_concurrency,
+                settings.worker_poll_interval_seconds, settings.worker_max_redirects,
+            ))
+            shutdown = asyncio.create_task(stop.wait())
+            try:
+                await asyncio.wait((scheduler, shutdown), return_when=asyncio.FIRST_COMPLETED)
+                if scheduler.done():
+                    await scheduler
+            finally:
+                scheduler.cancel()
+                shutdown.cancel()
+                await asyncio.gather(scheduler, shutdown, return_exceptions=True)
         return 0
     finally:
-        dependencies.close()
+        await asyncio.to_thread(dependencies.close)
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.remove_signal_handler(sig)
         logger.info("StatusWatch Worker stopped.")
+
+
+def main() -> int:
+    configure_logging()
+    # httpx INFO logs include full URLs. Never log monitored URL/query values.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    return asyncio.run(run_worker())
 
 
 if __name__ == "__main__":

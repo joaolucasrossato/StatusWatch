@@ -10,6 +10,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.user import User
+    from app.models.monitor_check import MonitorCheck
 
 
 class Monitor(Base):
@@ -34,3 +35,7 @@ class Monitor(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now(),
     )
     user: Mapped["User"] = relationship(back_populates="monitors")
+
+    checks: Mapped[list["MonitorCheck"]] = relationship(
+        back_populates="monitor", cascade="all, delete-orphan", passive_deletes=True,
+    )

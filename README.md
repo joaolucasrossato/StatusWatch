@@ -1,10 +1,10 @@
-# StatusWatch · v0.3.0
+# StatusWatch · v0.4.0
 
 Fundação de uma plataforma de monitoramento de aplicações, APIs e servidores. Projeto de portfólio focado em backend, DevOps, observabilidade e SRE, com evolução futura para Kubernetes.
 
-Esta versão entrega autenticação JWT e gerenciamento de monitores por usuário, integrado ao frontend, PostgreSQL e Redis. O worker existente continua apenas validando dependências.
+Esta versão entrega o HTTP Monitoring Engine: checks GET assíncronos, UP/DOWN, código HTTP, tempo de resposta, timeout, proteção SSRF com pinagem de IP, scheduler persistido e concorrência limitada. Preserva autenticação JWT e CRUD de monitores.
 
-**HTTP checks are not executed yet. Monitoring execution will be introduced in v0.4.**
+Detalhes, política SSRF, API e limites: [docs/monitoring-engine.md](docs/monitoring-engine.md). Evidências: [docs/validation-v0.4.md](docs/validation-v0.4.md).
 
 ## Arquitetura e stack
 
@@ -87,11 +87,14 @@ Os containers são `statuswatch-web`, `statuswatch-api`, `statuswatch-worker`, `
 | `JWT_SECRET` | Secret JWT obrigatório; use valor aleatório e diferente por ambiente |
 | `JWT_ALGORITHM` | Algoritmo JWT, padrão HS256 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Validade do token, padrão 60 minutos |
+| `WORKER_MAX_CONCURRENCY` | Máximo de checks simultâneos, padrão 10 |
+| `WORKER_POLL_INTERVAL_SECONDS` | Pausa entre ciclos, padrão 5 segundos |
+| `WORKER_MAX_REDIRECTS` | Máximo de redirects validados, padrão 5 |
 | `API_PROXY_TARGET` | Destino do proxy Vite; definido no Compose como `http://api:8000` |
 
 `change_me` é apenas um placeholder de desenvolvimento. Mantenha a senha de `DATABASE_URL` consistente com `POSTGRES_PASSWORD`. Caracteres especiais na URL precisam de percent-encoding. `.env` é ignorado pelo Git e não entra nas imagens. Não compartilhe a saída de `docker compose config` com valores reais, pois ela contém as variáveis resolvidas.
 
-Entre containers, os hosts são `db`, `redis` e `api`, nunca localhost. `Settings` centraliza as variáveis do processo; Docker Compose carrega o `.env` e as injeta nos containers. As tabelas `users` e `monitors` são criadas por migrations Alembic, aplicadas explicitamente antes de iniciar a aplicação.
+Entre containers, os hosts são `db`, `redis` e `api`, nunca localhost. `Settings` centraliza as variáveis do processo; Docker Compose carrega o `.env` e as injeta nos containers. As tabelas `users`, `monitors` e `monitor_checks` são criadas por migrations Alembic, aplicadas explicitamente antes de iniciar a aplicação.
 
 ## Desenvolvimento local
 
@@ -139,7 +142,7 @@ source .venv/bin/activate
 python -m app.worker
 ```
 
-O worker registra as conexões, anuncia `ready` e aguarda. Ctrl+C ou SIGTERM encerra as conexões de forma limpa. Se uma dependência falhar no início, sai com código 1; reinicie depois de corrigir a conexão.
+O worker valida as conexões, anuncia `ready` e agenda checks de monitores ativos com intervalos configurados. Ctrl+C ou SIGTERM encerra as conexões de forma limpa. Se uma dependência falhar no início, sai com código 1; reinicie depois de corrigir a conexão.
 
 ### Frontend
 
@@ -155,7 +158,7 @@ O proxy local usa `http://127.0.0.1:8000`. Para outro destino, defina `API_PROXY
 
 | Método | Caminho | Resposta |
 | --- | --- | --- |
-| GET | `/` | 200: `{"name":"StatusWatch","version":"0.3.0"}` |
+| GET | `/` | 200: `{"name":"StatusWatch","version":"0.4.0"}` |
 | GET | `/health` | 200 saudável; 503 se PostgreSQL ou Redis falhar |
 
 Exemplo saudável:
@@ -216,12 +219,12 @@ docker compose down
 - **Docker permission denied:** confira se Docker está ativo e se seu usuário possui permissão de acesso ao daemon.
 - **API Offline / HTTP 503:** consulte `/health`, `docker compose ps` e os logs. Confirme `db:5432` e `redis:6379` nos containers, ou loopback e portas publicadas no desenvolvimento local.
 - **Mudança de senha sem efeito:** as variáveis `POSTGRES_*` inicializam apenas um volume vazio. Um banco existente mantém suas credenciais; altere-as no banco ou reinicialize conscientemente o volume.
-- **Worker terminou:** verifique dependências e execute `docker compose start worker`. Nesta versão ele valida apenas a inicialização.
+- **Worker terminou:** verifique dependências e execute `docker compose start worker`. Consulte os logs de inicialização e execução do scheduler.
 - **Frontend no container:** utiliza Vite para desenvolvimento. O build é validado na imagem, mas esta configuração ainda não é uma publicação de produção.
 
 ## Roadmap
 
-Implementado: v0.1 infraestrutura, v0.2 autenticação e v0.3 gerenciamento de monitores. A v0.4 introduzirá execução de checks HTTP com proteção SSRF. Agendamento, histórico, incidentes, notificações, observabilidade, SLOs e Kubernetes permanecem fora desta entrega.
+Implementado: v0.1 infraestrutura, v0.2 autenticação, v0.3 gerenciamento de monitores e v0.4 HTTP Monitoring Engine. Histórico paginado, uptime, gráficos, incidentes, notificações, observabilidade externa, SLOs e Kubernetes permanecem fora desta entrega.
 
 
 ## Monitor Management
@@ -245,9 +248,16 @@ A interface permite cadastro, login, adicionar/editar monitores, pausar/ativar e
 | GET | `/monitors/{id}` | 200 |
 | PATCH | `/monitors/{id}` | 200 |
 | DELETE | `/monitors/{id}` | 204 sem body |
+| GET | `/monitors/{id}/checks/latest` | 200 com último check ou null (Pending) |
 
-Contrato completo: [docs/monitors.md](docs/monitors.md). Autenticação: [docs/authentication.md](docs/authentication.md). Evidências v0.3: [docs/validation-v0.3.md](docs/validation-v0.3.md).
+Contrato de configuração v0.3: [docs/monitors.md](docs/monitors.md). Autenticação: [docs/authentication.md](docs/authentication.md). Evidências v0.3: [docs/validation-v0.3.md](docs/validation-v0.3.md).
 
 ### Produção
 
 Use `docker compose --env-file .env.production -f compose.prod.yaml`, configurando secrets exclusivos de produção. Execute `build`, `run --rm api alembic upgrade head` e `up -d --wait` com esses mesmos argumentos. O Nginx serve o frontend na porta local 8080 e encaminha `/api/` à API privada. PostgreSQL e Redis não publicam portas. Nunca execute downgrade no banco real para testar migrations; o teste em `backend/tests/validate_migrations.py` cria um banco descartável separado e exige CREATEDB.
+
+## HTTP Monitoring Engine
+
+Async HTTP checks com GET, intervalos configuráveis, timeout total, UP/DOWN, HTTP status code e response time até os headers finais. O worker usa uma réplica, concorrência limitada e decisões baseadas no último check persistido. A interface mostra Latest monitor status (UP/DOWN/Pending) separado de Active/Paused e atualiza a cada 30 segundos enquanto visível. Sem checks artificiais para Pending.
+
+SSRF: bloqueio de destinos não públicos IPv4/IPv6, validação de todos os IPs DNS, pinagem da conexão, TLS verificado e redirects manuais validados. Não substitui controles de egress de rede. Checks crescem sem retenção automática nesta versão. Veja as limitações na documentação do engine.

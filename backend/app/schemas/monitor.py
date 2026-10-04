@@ -2,8 +2,18 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StringConstraints, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, StringConstraints, model_validator
 
+from app.schemas.monitor_check import MonitorCheckResponse
+
+
+def reject_userinfo(url: HttpUrl) -> HttpUrl:
+    if url.username is not None or url.password is not None:
+        raise ValueError("URL credentials are not allowed")
+    return url
+
+
+MonitorURL = Annotated[HttpUrl, AfterValidator(reject_userinfo)]
 MonitorName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 MonitorMethod = Literal["GET"]
 MonitorInterval = Literal[30, 60, 300, 600]
@@ -14,7 +24,7 @@ class MonitorCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: MonitorName
-    url: HttpUrl
+    url: MonitorURL
     method: MonitorMethod = "GET"
     interval_seconds: MonitorInterval = 60
     timeout_seconds: MonitorTimeout = 10
@@ -25,7 +35,7 @@ class MonitorUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: MonitorName | None = None
-    url: HttpUrl | None = None
+    url: MonitorURL | None = None
     method: MonitorMethod | None = None
     interval_seconds: MonitorInterval | None = None
     timeout_seconds: MonitorTimeout | None = None
@@ -53,3 +63,5 @@ class MonitorResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+    latest_check: MonitorCheckResponse | None = None

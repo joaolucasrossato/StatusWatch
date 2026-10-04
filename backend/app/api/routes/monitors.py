@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user
 from app.db.session import get_db
 from app.models.monitor import Monitor
+from app.models.monitor_check import MonitorCheck
+from app.schemas.monitor_check import MonitorCheckResponse
 from app.models.user import User
 from app.schemas.monitor import MonitorCreate, MonitorResponse, MonitorUpdate
 from app.services import monitors
@@ -40,3 +42,10 @@ def update(monitor_id: uuid.UUID, payload: MonitorUpdate, db: Database, current_
 def delete(monitor_id: uuid.UUID, db: Database, current_user: CurrentUser) -> Response:
     monitors.delete_monitor(db, user_id=current_user.id, monitor_id=monitor_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{monitor_id}/checks/latest", response_model=MonitorCheckResponse | None)
+def get_latest(monitor_id: uuid.UUID, db: Database, current_user: CurrentUser, response: Response) -> MonitorCheck | None:
+    monitor = monitors.get_monitor(db, user_id=current_user.id, monitor_id=monitor_id)
+    response.headers["Cache-Control"] = "no-store"
+    return monitor.latest_check

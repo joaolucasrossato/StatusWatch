@@ -15,16 +15,24 @@ export function Monitors({ token, onExpired }: { token: string; onExpired: () =>
 
   useEffect(() => {
     let disposed = false
-    request<Monitor[]>('/monitors', token).then(data => {
-      if (!disposed) { setMonitors(data); setLoaded(true) }
-    }).catch(failure => {
-      if (!disposed) {
-        if (failure instanceof ApiError && [401, 403].includes(failure.status)) onExpired()
-        else setError(errorMessage(failure))
+    let timer: ReturnType<typeof setTimeout>
+    async function reload() {
+      if (document.visibilityState !== 'hidden' && !busy && editing === undefined && !deleting) {
+        try {
+          const data = await request<Monitor[]>('/monitors', token)
+          if (!disposed) { setMonitors(data); setLoaded(true); setError('') }
+        } catch (failure) {
+          if (!disposed) {
+            if (failure instanceof ApiError && [401, 403].includes(failure.status)) onExpired()
+            else setError(errorMessage(failure))
+          }
+        } finally { if (!disposed) setLoading(false) }
       }
-    }).finally(() => { if (!disposed) setLoading(false) })
-    return () => { disposed = true }
-  }, [token, refresh, onExpired])
+      if (!disposed) timer = setTimeout(reload, 30_000)
+    }
+    void reload()
+    return () => { disposed = true; clearTimeout(timer) }
+  }, [token, refresh, onExpired, busy, editing, deleting])
 
   async function mutate(action: () => Promise<void>, message: string) {
     setBusy(true); setError(''); setNotice('')
@@ -44,12 +52,12 @@ export function Monitors({ token, onExpired }: { token: string; onExpired: () =>
   return <>
     <div className="page-heading"><div><p className="eyebrow">Monitor management</p><h1>My monitors</h1></div>
       <button className="primary" disabled={busy || editing !== undefined || !loaded} onClick={() => { setEditing(null); setDeleting(null); setError('') }}>+ Add monitor</button></div>
-    <p className="version-note">Configure what matters. HTTP checks arrive in v0.4. Active and Paused describe configuration only.</p>
+    <p className="version-note">HTTP checks refresh every 30 seconds while this page is visible. Active/Paused controls monitoring; UP/DOWN is the latest result.</p>
     {error && <div role="alert" className="error">{error} <button disabled={busy || loading} onClick={() => { setLoading(true); setError(''); setRefresh(value => value + 1) }}>Reload list</button></div>}
     {notice && <p role="status" className="success">{notice}</p>}
     {editing !== undefined && <MonitorForm key={editing?.id ?? 'new'} monitor={editing} busy={busy} onSave={save} onCancel={() => { setEditing(undefined); setError('') }} />}
     {deleting && <section className="panel delete-confirm" aria-labelledby="delete-title">
-      <h2 id="delete-title">Delete “{deleting.name}”?</h2><p>This permanently removes this monitor configuration.</p>
+      <h2 id="delete-title">Delete “{deleting.name}”?</h2><p>This permanently removes this monitor and its checks.</p>
       <div className="actions"><button className="danger" disabled={busy} onClick={() => void mutate(async () => {
         await request(`/monitors/${deleting.id}`, token, 'DELETE')
         setMonitors(current => current.filter(item => item.id !== deleting.id)); setDeleting(null)
@@ -58,11 +66,21 @@ export function Monitors({ token, onExpired }: { token: string; onExpired: () =>
     {loading ? <p role="status" className="panel">Loading monitors…</p> : loaded && monitors.length === 0 ? <section className="panel empty">
       <span className="empty-icon" aria-hidden="true">＋</span><h2>No monitors yet</h2><p className="muted">Add a service URL to start building your monitoring workspace.</p>
       <button disabled={editing !== undefined} onClick={() => setEditing(null)}>Add your first monitor</button>
-    </section> : loaded && <div className="panel table-wrap"><table><caption className="sr-only">Your monitor configurations</caption><thead><tr><th>Name / URL</th><th>Method</th><th>Interval</th><th>Timeout</th><th>State</th><th>Actions</th></tr></thead><tbody>
+    </section> : loaded && <div className="panel table-wrap"><table><caption className="sr-only">Your monitor configurations</caption><thead><tr><th>Name / URL</th><th>Method</th><th>Interval</th><th>Timeout</th><th>Monitoring</th><th>Operational status</th><th>Actions</th></tr></thead><tbody>
       {monitors.map(monitor => <tr key={monitor.id}>
         <td><strong>{monitor.name}</strong><span className="monitor-url">{monitor.url}</span></td><td>GET</td>
         <td>{intervals.find(([value]) => value === monitor.interval_seconds)?.[1]}</td><td>{monitor.timeout_seconds}s</td>
         <td><span className={`badge ${monitor.is_active ? 'active' : 'paused'}`}>{monitor.is_active ? 'Active' : 'Paused'}</span></td>
+        <td>
+          <span className={`badge ${monitor.latest_check?.status === 'UP' ? 'active' : monitor.latest_check?.status === 'DOWN' ? 'down' : 'paused'}`}>{monitor.latest_check?.status ?? 'Pending'}</span>
+          {monitor.latest_check && <div className="check-details">
+            {monitor.latest_check.http_status_code !== null && <span>HTTP: {monitor.latest_check.http_status_code}</span>}
+            {monitor.latest_check.response_time_ms !== null && <span>Response: {monitor.latest_check.response_time_ms} ms</span>}
+            {monitor.latest_check.error_message && <span>{monitor.latest_check.error_message}</span>}
+            <span>Last check: <time dateTime={monitor.latest_check.checked_at}>{new Date(monitor.latest_check.checked_at).toLocaleString()}</time></span>
+            {!monitor.is_active && <span>Monitoring paused — last result retained</span>}
+          </div>}
+        </td>
         <td><div className="actions"><button aria-label={`Edit ${monitor.name}`} disabled={busy || editing !== undefined || !!deleting} onClick={() => { setEditing(monitor); setError('') }}>Edit</button>
           <button aria-label={`${monitor.is_active ? 'Pause' : 'Activate'} ${monitor.name}`} disabled={busy || editing !== undefined || !!deleting} onClick={() => void mutate(async () => {
             const updated = await request<Monitor>(`/monitors/${monitor.id}`, token, 'PATCH', { is_active: !monitor.is_active })
