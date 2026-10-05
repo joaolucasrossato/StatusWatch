@@ -18,6 +18,10 @@ function App() {
     let controller: AbortController
 
     async function checkHealth() {
+      if (document.visibilityState === 'hidden') {
+        timer = setTimeout(checkHealth, 30_000)
+        return
+      }
       controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 10_000)
       try {
@@ -31,7 +35,7 @@ function App() {
         if (!disposed) setStatus('offline')
       } finally {
         clearTimeout(timeout)
-        if (!disposed) timer = setTimeout(checkHealth, 15_000)
+        if (!disposed) timer = setTimeout(checkHealth, 30_000)
       }
     }
 
@@ -66,7 +70,7 @@ function App() {
             : 'Disponibilidade da API e de suas dependências. Atualização automática.'}
         </p>
       </section>
-      <footer><span>STATUSWATCH</span><span>v0.6.0</span></footer>
+      <footer><span>STATUSWATCH</span><span>v1.0.0</span></footer>
     </main>
   )
 }

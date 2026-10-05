@@ -96,7 +96,7 @@ export function Notifications({ monitor, token, onBack, onExpired }: {
     </section>}
     <section className="panel"><h2>Channels</h2>
       {loading && !deliveries ? <p role="status">Loading notifications…</p> : channels.length === 0 ? <p className="muted">No notification channels configured.</p> : <div className="table-wrap"><table>
-        <thead><tr><th>Channel</th><th>Status</th><th>Events</th><th>Actions</th></tr></thead><tbody>{channels.map(channel => <tr key={channel.id}>
+        <caption className="sr-only">Notification channels</caption><thead><tr><th>Channel</th><th>Status</th><th>Events</th><th>Actions</th></tr></thead><tbody>{channels.map(channel => <tr key={channel.id}>
           <td>{channel.type}<span className="monitor-url">{channel.target}</span></td>
           <td><span className={`badge ${channel.is_active ? 'active' : 'paused'}`}>{channel.is_active ? 'Enabled' : 'Disabled'}</span></td>
           <td>{[channel.notify_on_open && 'Opened', channel.notify_on_resolved && 'Resolved'].filter(Boolean).join(', ') || 'None'}</td>
@@ -112,7 +112,7 @@ export function Notifications({ monitor, token, onBack, onExpired }: {
       </select></label></div>
       {loading && !deliveries ? <p role="status">Loading deliveries…</p> : deliveries && <>
         {deliveries.items.length === 0 ? <p className="muted">No deliveries recorded.</p> : <div className="table-wrap"><table>
-          <thead><tr><th>Event</th><th>Channel</th><th>Status</th><th>Attempts</th><th>Created</th><th>Sent</th></tr></thead><tbody>{deliveries.items.map(delivery => {
+          <caption className="sr-only">Notification delivery history</caption><thead><tr><th>Event</th><th>Channel</th><th>Status</th><th>Attempts</th><th>Created</th><th>Sent</th></tr></thead><tbody>{deliveries.items.map(delivery => {
             const channel = channels.find(item => item.id === delivery.channel_id)
             return <tr key={delivery.id}><td>{delivery.event_type}</td><td>{channel ? `${channel.type} · ${channel.target}` : delivery.channel_id}</td>
               <td><span className={`badge ${delivery.status === 'SENT' ? 'active' : delivery.status === 'FAILED' ? 'down' : 'paused'}`}>{delivery.status}</span>{delivery.last_error && <span className="check-details">{delivery.last_error}</span>}</td>

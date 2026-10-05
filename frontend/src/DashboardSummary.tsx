@@ -22,7 +22,7 @@ export function DashboardSummary({ summary, loading }: Props) {
       className: '',
     },
     {
-      label: 'Operational',
+      label: 'UP',
       value: summary?.up_monitors ?? 0,
       className: 'metric-up',
     },
@@ -36,6 +36,7 @@ export function DashboardSummary({ summary, loading }: Props) {
       value: summary?.pending_monitors ?? 0,
       className: 'metric-pending',
     },
+    { label: 'Active', value: summary?.active_monitors ?? 0, className: '' },
     {
       label: 'Paused',
       value: summary?.paused_monitors ?? 0,
