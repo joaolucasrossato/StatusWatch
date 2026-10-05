@@ -52,14 +52,19 @@ def monitor_channels(monitor_id: uuid.UUID, db: Session = Depends(get_db), user:
 @router.post("/notification-channels", response_model=ChannelResponse, status_code=201)
 def channel_create(payload: ChannelCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     channels.require_monitor(db, user.id, payload.monitor_id)
+    user_id = user.id
+    db.rollback()  # Release the read transaction before DNS/network I/O.
     target = asyncio.run(channels.validate_target(payload.type, payload.target))
-    return channels.channel_response(channels.create_channel(db, user.id, payload, target))
+    return channels.channel_response(channels.create_channel(db, user_id, payload, target))
 
 
 @router.patch("/notification-channels/{channel_id}", response_model=ChannelResponse)
 def channel_update(channel_id: uuid.UUID, payload: ChannelUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     channel = channels.owned_channel(db, user.id, channel_id)
-    target = asyncio.run(channels.validate_target(channel.type, payload.target)) if payload.target is not None else None
+    user_id, kind = user.id, channel.type
+    db.rollback()
+    target = asyncio.run(channels.validate_target(kind, payload.target)) if payload.target is not None else None
+    channel = channels.owned_channel(db, user_id, channel_id)
     return channels.channel_response(channels.update_channel(db, channel, payload, target))
 
 

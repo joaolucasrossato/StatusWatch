@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, '/app')
 from app.core.config import Settings
-from app.models import Incident, Monitor, NotificationChannel, NotificationDelivery, User
+from app.models import Incident, Monitor, MonitorCheck, NotificationChannel, NotificationDelivery, User
 from app.monitoring.checker import CheckResult, create_client
 from app.monitoring.scheduler import MonitorJob, persist_check
 from app.notifications.worker import claim_one, finish, run_delivery_cycle
@@ -34,8 +34,13 @@ def verify(engine) -> None:
         db.add(monitor); db.flush()
         db.add(NotificationChannel(user_id=user.id, monitor_id=monitor.id, type='WEBHOOK', target='https://example.com'))
         job = MonitorJob(monitor.id, monitor.url, monitor.timeout_seconds, monitor.interval_seconds)
-    for status in ['UP', 'DOWN', 'DOWN', 'DOWN', 'DOWN', 'UP', 'UP']:
+    for index, status in enumerate(['UP', 'DOWN', 'DOWN', 'DOWN', 'DOWN', 'UP', 'UP']):
         assert persist_check(sessions, job, CheckResult(status, 200 if status == 'UP' else 500, 10))
+        with sessions() as db:
+            count = db.scalar(select(func.count()).select_from(Incident))
+            assert count == (0 if index < 3 else 1)
+            if index >= 3:
+                assert db.scalar(select(Incident.status)) == ('OPEN' if index < 5 else 'RESOLVED')
     with sessions() as db:
         assert db.scalar(select(func.count()).select_from(Incident)) == 1
         assert db.scalar(select(Incident.status)) == 'RESOLVED'
@@ -68,6 +73,17 @@ def verify(engine) -> None:
     with sessions() as db:
         assert set(db.scalars(select(NotificationDelivery.status))) == {'SENT'}
         assert set(db.scalars(select(NotificationDelivery.attempt_count))) == {2}
+    from app.services.retention import cleanup
+    with sessions() as db, db.begin():
+        old = datetime.now(timezone.utc) - timedelta(days=31)
+        for check in db.scalars(select(MonitorCheck)):
+            check.checked_at = old
+        for delivery in db.scalars(select(NotificationDelivery)):
+            delivery.created_at = old
+    assert cleanup(sessions, Settings(), datetime.now(timezone.utc)) == (7, 2)
+    with sessions() as db:
+        assert db.scalar(select(func.count()).select_from(Incident)) == 1
+    print('PASS: PostgreSQL retention preserves incidents')
     print('PASS: PostgreSQL lifecycle, unique outbox, concurrent claims, retries, no transaction during send')
 
 

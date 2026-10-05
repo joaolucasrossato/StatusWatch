@@ -88,3 +88,14 @@ def test_validation_does_not_echo_target(client, accounts, channel_monitor):
     response = create(client, accounts, channel_monitor, target=marker * 100)
     assert response.status_code == 422
     assert marker not in response.text
+
+
+def test_dns_validation_releases_transaction(client, accounts, db, channel_monitor, monkeypatch):
+    async def validate(kind, target):
+        assert not db.in_transaction()
+        return target
+    monkeypatch.setattr('app.services.notification_channels.validate_target', validate)
+    response = create(client, accounts, channel_monitor, type='WEBHOOK', target='https://example.com/?token=private')
+    assert response.status_code == 201
+    assert client.patch('/notification-channels/' + response.json()['id'], headers=accounts[0][1],
+                        json={'target': 'https://example.com/?key=replacement'}).status_code == 200

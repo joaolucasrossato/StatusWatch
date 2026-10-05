@@ -63,3 +63,9 @@ Check current revision with:
 Check model/migration drift with:
 
     alembic check
+
+## Consolidação v1.0
+
+JWT_SECRET exige pelo menos 32 caracteres; TTL deve ser positivo. HS256, HS384
+e HS512 são permitidos. Tokens precisam de exp/sub/type; inválidos e expirados
+retornam 401. Inputs de validação não são ecoados em respostas 422.

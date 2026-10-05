@@ -1,5 +1,9 @@
 # HTTP Monitoring Engine — v0.4.0
 
+> Documento da etapa histórica indicada no título. Para o estado consolidado,
+> consulte o [README](../README.md), a [retenção](retention.md),
+> a [segurança](security.md) e a [validação v1.0](validation-v1.0.md).
+
 ## Arquitetura
 
 ```text

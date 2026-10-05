@@ -63,7 +63,7 @@ export async function request<T>(path: string, token?: string, method = 'GET', b
     if (!response.ok) {
       const data = await response.json().catch(() => ({}))
       const detail = data.detail
-      const message = typeof detail === 'string' ? detail : Array.isArray(detail)
+      const message = response.status >= 500 ? 'The service is temporarily unavailable. Please try again.' : typeof detail === 'string' ? detail : Array.isArray(detail)
         ? detail.map((item: { loc: string[]; msg: string }) => `${item.loc.slice(1).join('.')}: ${item.msg}`).join('; ')
         : `Request failed (${response.status})`
       throw new ApiError(message, response.status)

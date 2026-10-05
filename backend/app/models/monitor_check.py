@@ -17,6 +17,7 @@ class MonitorCheck(Base):
     __table_args__ = (
         CheckConstraint("status IN ('UP', 'DOWN')", name="ck_monitor_checks_status"),
         CheckConstraint("response_time_ms >= 0", name="ck_monitor_checks_response_time"),
+        Index("ix_monitor_checks_checked_at", "checked_at"),
         Index("ix_monitor_checks_monitor_id_checked_at", "monitor_id", "checked_at"),
     )
 

@@ -134,8 +134,17 @@ def persist_check(
         # keeping check persistence and incident lifecycle in one transaction.
         db.flush()
 
-        process_incident_for_check(db, check)
+        incident = process_incident_for_check(db, check)
+        incident_id = incident.id if incident else None
+        transition = None
+        if incident is not None:
+            if incident.opened_at == check.checked_at:
+                transition = "incident_opened"
+            elif incident.resolved_at == check.checked_at:
+                transition = "incident_resolved"
 
+    if transition:
+        logger.info("%s monitor_id=%s incident_id=%s", transition, job.id, incident_id)
     return True
 
 
@@ -190,7 +199,7 @@ async def run_cycle(
 
                 logger.info(
                     (
-                        "Monitor check completed monitor_id=%s "
+                        "monitor_check_completed monitor_id=%s "
                         "status=%s error_type=%s saved=%s"
                     ),
                     job.id,

@@ -54,6 +54,7 @@ def decode_access_token(token: str) -> str:
             token,
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm],
+            options={"require": ["exp", "sub", "type"]},
         )
 
         if payload.get("type") != "access":

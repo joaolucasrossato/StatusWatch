@@ -188,3 +188,54 @@ def test_deliveries_api_filters_pagination_and_ownership(outbox, db, client, acc
     assert client.post('/notification-deliveries', headers=headers, json={}).status_code == 405
     client.delete('/notification-channels/' + channel['id'], headers=headers)
     assert client.get('/notification-deliveries', headers=headers).json()['total'] == 0
+
+
+def test_delivery_loop_recovers_after_database_failure(monkeypatch, caplog):
+    from app.notifications.worker import delivery_loop
+    async def run():
+        stop = asyncio.Event()
+        calls = 0
+        async def cycle(*args):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError('private database details')
+            stop.set()
+        monkeypatch.setattr('app.notifications.worker.run_delivery_cycle', cycle)
+        await delivery_loop(None, None, Settings(worker_poll_interval_seconds=0.1), stop)
+        assert calls == 2
+    asyncio.run(run())
+    assert 'notification_delivery_cycle_failed' in caplog.text
+    assert 'private database details' not in caplog.text
+
+
+@pytest.mark.parametrize('kind,error_name', [('EMAIL', 'timeout'), ('EMAIL', 'smtp'),
+                                          ('WEBHOOK', 'timeout'), ('WEBHOOK', 'protocol')])
+def test_transport_failures_leave_delivery_retryable(outbox, db, monkeypatch, kind, error_name):
+    import smtplib
+    import httpx
+    from app.models import NotificationChannel
+    sessions, job, channel = outbox
+    record = db.get(NotificationChannel, uuid.UUID(channel['id']))
+    record.type = kind
+    record.target = 'https://example.com' if kind == 'WEBHOOK' else 'alerts@example.com'
+    db.commit()
+    open_incident(sessions, job)
+    error = (httpx.ReadTimeout('private destination') if kind == 'WEBHOOK' and error_name == 'timeout'
+             else httpx.RemoteProtocolError('private response') if error_name == 'protocol'
+             else smtplib.SMTPException('private credentials') if error_name == 'smtp'
+             else TimeoutError('private SMTP timeout'))
+    if kind == 'EMAIL':
+        def fail(*args):
+            raise error
+        monkeypatch.setattr('app.notifications.worker.send_email', fail)
+    else:
+        monkeypatch.setattr('app.notifications.worker.send_webhook', AsyncMock(side_effect=error))
+    async def run():
+        async with create_client(1) as client:
+            await run_delivery_cycle(sessions, client, Settings())
+    asyncio.run(run())
+    delivery = rows(db)[0]
+    assert delivery.status == 'PENDING'
+    assert delivery.attempt_count == 1
+    assert delivery.last_error == 'delivery_transport_error'

@@ -13,6 +13,8 @@ x-backend: &backend
     WORKER_POLL_INTERVAL_SECONDS: ${WORKER_POLL_INTERVAL_SECONDS:-5}
     WORKER_MAX_REDIRECTS: ${WORKER_MAX_REDIRECTS:-5}
     ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+    CHECK_RETENTION_DAYS: ${CHECK_RETENTION_DAYS:-30}
+    NOTIFICATION_RETENTION_DAYS: ${NOTIFICATION_RETENTION_DAYS:-30}
     SMTP_HOST: ${SMTP_HOST:-}
     SMTP_PORT: ${SMTP_PORT:-587}
     SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -74,6 +76,7 @@ services:
   worker:
     <<: *backend
     container_name: statuswatch-worker
+    restart: unless-stopped
     command: ["python", "-m", "app.worker"]
     stop_grace_period: 15s
 
