@@ -4,8 +4,8 @@ StatusWatch é uma plataforma de monitoramento HTTP/HTTPS desenvolvida como
 projeto de portfólio com foco em backend, infraestrutura, DevOps,
 observabilidade e SRE.
 
-A versão **v0.6.0 — Incidents** consolida o fluxo principal de
-monitoramento iniciado nas versões anteriores.
+A versão **v0.6.0** consolidou incidentes. A etapa v0.7 adiciona notificações
+com outbox transacional e retries no worker existente.
 
 Nesta versão, o usuário pode:
 
@@ -16,7 +16,9 @@ Nesta versão, o usuário pode:
 - consultar estatísticas das últimas 24 horas;
 - visualizar uptime e tempos de resposta;
 - acompanhar gráfico de response time;
-- consultar o histórico recente de checks.
+- consultar o histórico recente de checks;
+- acompanhar incidentes globais e por monitor com filtros e paginação;
+- configurar canais EMAIL/WEBHOOK por monitor e consultar entregas.
 
 O worker executa os checks em segundo plano e persiste seus resultados no
 PostgreSQL. A API disponibiliza os dados ao frontend autenticado via JWT.
@@ -230,7 +232,7 @@ docker compose down
 
 ## Roadmap
 
-Implementado: v0.1 infraestrutura, v0.2 autenticação, v0.3 gerenciamento de monitores e v0.4 HTTP Monitoring Engine. v0.5 Dashboard + History está implementada; v0.6 adiciona incidentes automáticos e sua interface. Notificações são a próxima etapa v0.7. Observabilidade externa, SLOs e Kubernetes ficam para versões futuras.
+Implementado: v0.1 infraestrutura, v0.2 autenticação, v0.3 gerenciamento de monitores e v0.4 HTTP Monitoring Engine. v0.5 Dashboard + History está implementada; v0.6 adiciona incidentes automáticos e sua interface. v0.7 Notifications adiciona canais EMAIL/WEBHOOK, outbox persistente e histórico de entregas. Observabilidade externa, SLOs e Kubernetes ficam para versões futuras.
 
 
 ## Monitor Management
@@ -272,3 +274,45 @@ SSRF: bloqueio de destinos não públicos IPv4/IPv6, validação de todos os IPs
 
 Histórico global e por monitor, filtros e paginação, e card de incidentes abertos.
 Veja [docs/incidents.md](docs/incidents.md) e [docs/dashboard-history.md](docs/dashboard-history.md).
+
+## Notificações
+
+Nos detalhes de um monitor, abra **Notifications** para criar canais EMAIL ou
+WEBHOOK, escolher eventos de abertura/resolução, ativar/desativar e consultar
+histórico paginado. Notificações surgem somente nas transições do incidente.
+
+SMTP é opcional. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `SMTP_FROM` e `SMTP_USE_TLS` no ambiente e recrie API/worker.
+Sem HOST/FROM, emails falham de forma controlada com retries; monitoring continua.
+Webhooks devem ser HTTP/HTTPS públicos (prefira HTTPS); destinos privados e
+redirects são bloqueados e URLs são mascaradas na API/interface.
+
+O worker executa uma tarefa de entregas independente do scheduler: até três
+tentativas com backoff persistido. A outbox compartilha a transação de check e
+incidente, mas o envio ocorre depois do commit. A entrega externa é at-least-once;
+receptores webhook devem deduplicar pelo header Idempotency-Key.
+
+APIs: `/notification-channels` (GET/POST), `/notification-channels/{id}`
+(PATCH/DELETE), `/monitors/{id}/notification-channels` (GET),
+`/notification-deliveries` (GET) e `/incidents/{id}/notification-deliveries` (GET).
+Todos os recursos são isolados por usuário autenticado.
+
+Documentação completa: [docs/notifications.md](docs/notifications.md).
+
+```bash
+# Execute antes de iniciar o código atualizado.
+docker compose run --rm api alembic upgrade head
+docker compose up --build -d --wait
+docker compose exec api alembic current
+docker compose exec api alembic heads
+docker compose exec api alembic check
+cd frontend
+npm test
+npm run lint
+npm run build
+```
+
+Para v1.0: priorizar retenção de dados, egress em produção, criptografia dos
+destinos, replay controlado de entregas e testes operacionais de recuperação.
+Página pública de status, SLO/SLA, billing, Kubernetes e observabilidade externa
+continuam fora desta versão.

@@ -49,12 +49,13 @@ export function MonitorDetails({
   const [refresh, setRefresh] = useState(0)
 
   useEffect(() => {
+    if (showNotifications) return
     let disposed = false
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout>
 
     async function loadDetails() {
-      if (document.visibilityState === 'hidden' || showNotifications) {
+      if (document.visibilityState === 'hidden') {
         if (!disposed) {
           timer = setTimeout(loadDetails, 30_000)
         }

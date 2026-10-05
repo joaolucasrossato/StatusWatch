@@ -614,3 +614,9 @@ Objetivo inicial:
 
 Notificações permanecem fora do escopo da v0.6 e serão tratadas
 separadamente na v0.7.
+
+## Integração posterior
+
+A v0.6 adiciona `open_incidents` ao resumo e histórico de incidentes nos detalhes,
+sem alterar uptime, stats ou paginação de checks. OPEN não é derivado de DOWN.
+Veja [incidents.md](incidents.md) e [notifications.md](notifications.md).

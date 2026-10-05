@@ -43,6 +43,7 @@ export function Monitors({
   const [notice, setNotice] = useState('')
 
   useEffect(() => {
+    if (page !== 'monitors' || selectedMonitor) return
     let disposed = false
     let timer: ReturnType<typeof setTimeout>
 
