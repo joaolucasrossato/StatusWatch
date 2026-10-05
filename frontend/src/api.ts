@@ -16,6 +16,7 @@ export type DashboardSummary = {
   active_monitors: number
   paused_monitors: number
   up_monitors: number
+  open_incidents: number
   down_monitors: number
   pending_monitors: number
   checks_last_24h: number
@@ -46,8 +47,11 @@ export class ApiError extends Error {
   constructor(message: string, status: number) { super(message); this.status = status }
 }
 
-export async function request<T>(path: string, token?: string, method = 'GET', body?: unknown): Promise<T> {
+export async function request<T>(path: string, token?: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   const controller = new AbortController()
+  const abort = () => controller.abort()
+  signal?.addEventListener('abort', abort, { once: true })
+  if (signal?.aborted) controller.abort()
   const timeout = setTimeout(() => controller.abort(), 15_000)
   try {
     const response = await fetch(`/api${path}`, {
@@ -65,7 +69,7 @@ export async function request<T>(path: string, token?: string, method = 'GET', b
       throw new ApiError(message, response.status)
     }
     return response.status === 204 ? undefined as T : await response.json() as T
-  } finally { clearTimeout(timeout) }
+  } finally { clearTimeout(timeout); signal?.removeEventListener('abort', abort) }
 }
 
 export function errorMessage(error: unknown): string {
@@ -73,3 +77,11 @@ export function errorMessage(error: unknown): string {
 }
 
 export const intervals = [[30, "30 seconds"], [60, "1 minute"], [300, "5 minutes"], [600, "10 minutes"]] as const
+
+export type IncidentStatus = 'OPEN' | 'RESOLVED'
+export type Incident = {
+  id: string; monitor_id: string; status: IncidentStatus
+  started_at: string; opened_at: string; resolved_at: string | null; created_at: string
+}
+export type Page<T> = { items: T[]; total: number; limit: number; offset: number }
+export type IncidentList = Page<Incident>

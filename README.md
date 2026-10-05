@@ -1,10 +1,10 @@
-# StatusWatch · v0.5.0
+# StatusWatch · v0.6.0
 
 StatusWatch é uma plataforma de monitoramento HTTP/HTTPS desenvolvida como
 projeto de portfólio com foco em backend, infraestrutura, DevOps,
 observabilidade e SRE.
 
-A versão **v0.5.0 — Dashboard + Histórico** consolida o fluxo principal de
+A versão **v0.6.0 — Incidents** consolida o fluxo principal de
 monitoramento iniciado nas versões anteriores.
 
 Nesta versão, o usuário pode:
@@ -50,6 +50,7 @@ PostgreSQL. A API disponibiliza os dados ao frontend autenticado via JWT.
                     │   Python Worker     │
                     │ HTTP Check Engine   │
                     └─────────────────────┘
+```
 
 ## Requisitos
 
@@ -163,7 +164,7 @@ O proxy local usa `http://127.0.0.1:8000`. Para outro destino, defina `API_PROXY
 
 | Método | Caminho | Resposta |
 | --- | --- | --- |
-| GET | `/` | 200: `{"name":"StatusWatch","version":"0.5.0"}` |
+| GET | `/` | 200: `{"name":"StatusWatch","version":"0.6.0"}` |
 | GET | `/health` | 200 saudável; 503 se PostgreSQL ou Redis falhar |
 
 Exemplo saudável:
@@ -229,7 +230,7 @@ docker compose down
 
 ## Roadmap
 
-Implementado: v0.1 infraestrutura, v0.2 autenticação, v0.3 gerenciamento de monitores e v0.4 HTTP Monitoring Engine. Histórico paginado, uptime, gráficos, incidentes, notificações, observabilidade externa, SLOs e Kubernetes permanecem fora desta entrega.
+Implementado: v0.1 infraestrutura, v0.2 autenticação, v0.3 gerenciamento de monitores e v0.4 HTTP Monitoring Engine. v0.5 Dashboard + History está implementada; v0.6 adiciona incidentes automáticos e sua interface. Notificações são a próxima etapa v0.7. Observabilidade externa, SLOs e Kubernetes ficam para versões futuras.
 
 
 ## Monitor Management
@@ -266,3 +267,8 @@ Use `docker compose --env-file .env.production -f compose.prod.yaml`, configuran
 Async HTTP checks com GET, intervalos configuráveis, timeout total, UP/DOWN, HTTP status code e response time até os headers finais. O worker usa uma réplica, concorrência limitada e decisões baseadas no último check persistido. A interface mostra Latest monitor status (UP/DOWN/Pending) separado de Active/Paused e atualiza a cada 30 segundos enquanto visível. Sem checks artificiais para Pending.
 
 SSRF: bloqueio de destinos não públicos IPv4/IPv6, validação de todos os IPs DNS, pinagem da conexão, TLS verificado e redirects manuais validados. Não substitui controles de egress de rede. Checks crescem sem retenção automática nesta versão. Veja as limitações na documentação do engine.
+
+## Incidentes
+
+Histórico global e por monitor, filtros e paginação, e card de incidentes abertos.
+Veja [docs/incidents.md](docs/incidents.md) e [docs/dashboard-history.md](docs/dashboard-history.md).

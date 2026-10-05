@@ -2,8 +2,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
-
-from app.models import MonitorCheck
+from app.models import Incident, MonitorCheck
 
 
 def create_monitor(client, headers, name="Dashboard Monitor", is_active=True):
@@ -53,6 +52,33 @@ def add_check(
     db.commit()
     return check
 
+def add_incident(
+    db,
+    monitor_id,
+    *,
+    status="OPEN",
+    started_at=None,
+):
+    started_at = started_at or datetime.now(timezone.utc)
+    opened_at = started_at + timedelta(seconds=2)
+
+    incident = Incident(
+        monitor_id=uuid.UUID(monitor_id),
+        status=status,
+        started_at=started_at,
+        opened_at=opened_at,
+        resolved_at=(
+            opened_at + timedelta(seconds=10)
+            if status == "RESOLVED"
+            else None
+        ),
+    )
+
+    db.add(incident)
+    db.commit()
+    db.refresh(incident)
+
+    return incident
 
 @pytest.mark.parametrize("token", [None, "invalid-token"])
 def test_dashboard_requires_authentication(client, db, token):
@@ -77,6 +103,7 @@ def test_empty_dashboard(client, accounts):
         "up_monitors": 0,
         "down_monitors": 0,
         "pending_monitors": 0,
+        "open_incidents": 0,
         "checks_last_24h": 0,
         "average_response_time_ms_24h": None,
     }
@@ -295,3 +322,149 @@ def test_dashboard_24h_metrics_ignore_old_checks(client, accounts, db):
 
     assert data["checks_last_24h"] == 2
     assert data["average_response_time_ms_24h"] == 150.0
+
+def test_dashboard_counts_open_incidents(
+    client,
+    accounts,
+    db,
+):
+    headers = accounts[0][1]
+
+    open_monitor = create_monitor(
+        client,
+        headers,
+        "Open Incident",
+    )
+    resolved_monitor = create_monitor(
+        client,
+        headers,
+        "Resolved Incident",
+    )
+
+    add_incident(
+        db,
+        open_monitor["id"],
+        status="OPEN",
+    )
+    add_incident(
+        db,
+        resolved_monitor["id"],
+        status="RESOLVED",
+    )
+
+    data = client.get(
+        "/dashboard/summary",
+        headers=headers,
+    ).json()
+
+    assert data["open_incidents"] == 1
+
+
+def test_dashboard_open_incidents_isolated_by_user(
+    client,
+    accounts,
+    db,
+):
+    alice_headers = accounts[0][1]
+    bob_headers = accounts[1][1]
+
+    alice_monitor = create_monitor(
+        client,
+        alice_headers,
+        "Alice Incident",
+    )
+    bob_monitor = create_monitor(
+        client,
+        bob_headers,
+        "Bob Incident",
+    )
+
+    add_incident(
+        db,
+        alice_monitor["id"],
+        status="OPEN",
+    )
+    add_incident(
+        db,
+        bob_monitor["id"],
+        status="OPEN",
+    )
+
+    alice = client.get(
+        "/dashboard/summary",
+        headers=alice_headers,
+    ).json()
+
+    bob = client.get(
+        "/dashboard/summary",
+        headers=bob_headers,
+    ).json()
+
+    assert alice["open_incidents"] == 1
+    assert bob["open_incidents"] == 1
+
+
+def test_down_monitor_does_not_imply_open_incident(
+    client,
+    accounts,
+    db,
+):
+    headers = accounts[0][1]
+
+    monitor = create_monitor(
+        client,
+        headers,
+        "DOWN without incident",
+    )
+
+    add_check(
+        db,
+        monitor["id"],
+        status="DOWN",
+        response_time_ms=500,
+        http_status_code=500,
+    )
+
+    data = client.get(
+        "/dashboard/summary",
+        headers=headers,
+    ).json()
+
+    assert data["down_monitors"] == 1
+    assert data["open_incidents"] == 0
+
+
+def test_open_incident_is_independent_from_latest_monitor_status(
+    client,
+    accounts,
+    db,
+):
+    headers = accounts[0][1]
+
+    monitor = create_monitor(
+        client,
+        headers,
+        "Incident Monitor",
+    )
+
+    add_check(
+        db,
+        monitor["id"],
+        status="DOWN",
+        response_time_ms=500,
+        http_status_code=500,
+    )
+
+    add_incident(
+        db,
+        monitor["id"],
+        status="OPEN",
+    )
+
+    data = client.get(
+        "/dashboard/summary",
+        headers=headers,
+    ).json()
+
+    assert data["down_monitors"] == 1
+    assert data["open_incidents"] == 1

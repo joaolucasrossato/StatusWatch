@@ -127,3 +127,5 @@ td:first-child { min-width: 200px; }
     margin: 0 -20px -20px;
   }
 }
+.pagination { align-items: center; justify-content: space-between; margin-top: 20px; }
+.pagination span { color: #a2b3c3; font-size: 13px; }

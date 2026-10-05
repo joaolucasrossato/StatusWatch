@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.models.monitor import Monitor
 from app.models.monitor_check import MonitorCheck
 
+from app.models.incident import Incident
+
 
 class MonitorNotFoundError(Exception):
     pass
@@ -119,6 +121,20 @@ def get_dashboard_summary(
         else None
     )
 
+    open_incidents_statement = (
+        select(func.count(Incident.id))
+        .join(
+            Monitor,
+            Monitor.id == Incident.monitor_id,
+        )
+        .where(
+            Monitor.user_id == user_id,
+            Incident.status == "OPEN",
+        )
+    )
+
+    open_incidents = db.scalar(open_incidents_statement) or 0
+
     return {
         "total_monitors": total_monitors,
         "active_monitors": active_monitors,
@@ -126,6 +142,7 @@ def get_dashboard_summary(
         "up_monitors": up_monitors,
         "down_monitors": down_monitors,
         "pending_monitors": pending_monitors,
+        "open_incidents": int(open_incidents),
         "checks_last_24h": int(checks_count or 0),
         "average_response_time_ms_24h": average_response_time_ms,
     }

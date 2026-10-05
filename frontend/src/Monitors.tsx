@@ -10,6 +10,7 @@ import {
 } from './api'
 import { DashboardSummary } from './DashboardSummary'
 import { MonitorDetails } from './MonitorDetails'
+import { Incidents } from './Incidents'
 import { MonitorForm } from './MonitorForm'
 
 export function Monitors({
@@ -19,6 +20,7 @@ export function Monitors({
   token: string
   onExpired: () => void
 }) {
+  const [page, setPage] = useState<'monitors' | 'incidents'>('monitors')
   const [monitors, setMonitors] = useState<Monitor[]>([])
   const [summary, setSummary] =
     useState<DashboardSummaryData | null>(null)
@@ -51,6 +53,7 @@ export function Monitors({
         && editing === undefined
         && !deleting
         && !selectedMonitor
+        && page === 'monitors'
       ) {
         try {
           const [monitorData, summaryData] =
@@ -111,6 +114,7 @@ export function Monitors({
     editing,
     deleting,
     selectedMonitor,
+    page,
   ])
 
   async function mutate(
@@ -207,6 +211,10 @@ export function Monitors({
     setNotice('')
   }
 
+  if (page === 'incidents') {
+    return <Incidents token={token} monitors={monitors} onExpired={onExpired} onBack={() => setPage('monitors')} />
+  }
+
   if (selectedMonitor) {
     const currentMonitor =
       monitors.find(
@@ -228,6 +236,10 @@ export function Monitors({
 
   return (
     <>
+      <nav className="details-navigation actions" aria-label="Monitoring navigation">
+        <button aria-current="page">Monitors</button>
+        <button disabled={busy || editing !== undefined || !!deleting} onClick={() => setPage('incidents')}>Incidents</button>
+      </nav>
       <div className="page-heading">
         <div>
           <p className="eyebrow">

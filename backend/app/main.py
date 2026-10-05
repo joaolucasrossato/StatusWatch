@@ -14,6 +14,8 @@ from app.core.logging import configure_logging
 from app.api.routes.dashboard import router as dashboard_router
 from app.api.routes.monitor_history import router as monitor_history_router
 
+from app.api.routes.incidents import router as incidents_router
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,11 +33,12 @@ async def lifespan(app: FastAPI):
         logger.info("%s API stopped", settings.app_name)
 
 
-app = FastAPI(title="StatusWatch API", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="StatusWatch API", version="0.6.0", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(monitors_router)
 app.include_router(dashboard_router)
 app.include_router(monitor_history_router)
+app.include_router(incidents_router)
 
 def get_dependencies(request: Request) -> Dependencies:
     return request.app.state.dependencies
@@ -43,7 +46,7 @@ def get_dependencies(request: Request) -> Dependencies:
 
 @app.get("/")
 def root() -> dict[str, str]:
-    return {"name": "StatusWatch", "version": "0.5.0"}
+    return {"name": "StatusWatch", "version": "0.6.0"}
 
 
 @app.get("/health", responses={503: {"description": "Dependency unavailable"}})

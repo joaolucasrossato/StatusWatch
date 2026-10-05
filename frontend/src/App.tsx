@@ -66,7 +66,7 @@ function App() {
             : 'Disponibilidade da API e de suas dependências. Atualização automática.'}
         </p>
       </section>
-      <footer><span>STATUSWATCH</span><span>v0.5.0</span></footer>
+      <footer><span>STATUSWATCH</span><span>v0.6.0</span></footer>
     </main>
   )
 }

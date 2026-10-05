@@ -4,9 +4,11 @@ import {
   errorMessage,
   request,
   type Monitor,
+  type IncidentList,
   type MonitorCheckHistory,
   type MonitorStats,
 } from './api'
+import { IncidentTable, Pagination } from './Incidents'
 import { ResponseTimeChart } from './ResponseTimeChart'
 
 type Props = {
@@ -34,6 +36,8 @@ export function MonitorDetails({
   onBack,
   onExpired,
 }: Props) {
+  const [incidents, setIncidents] = useState<IncidentList | null>(null)
+  const [incidentOffset, setIncidentOffset] = useState(0)
   const [stats, setStats] = useState<MonitorStats | null>(null)
   const [history, setHistory] =
     useState<MonitorCheckHistory | null>(null)
@@ -44,6 +48,7 @@ export function MonitorDetails({
 
   useEffect(() => {
     let disposed = false
+    const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout>
 
     async function loadDetails() {
@@ -56,18 +61,24 @@ export function MonitorDetails({
       }
 
       try {
-        const [statsData, historyData] = await Promise.all([
+        const [statsData, historyData, incidentData] = await Promise.all([
           request<MonitorStats>(
             `/monitors/${monitor.id}/stats?window_hours=24`,
-            token,
+            token, 'GET', undefined, controller.signal,
           ),
           request<MonitorCheckHistory>(
             `/monitors/${monitor.id}/checks?limit=50&offset=0`,
-            token,
+            token, 'GET', undefined, controller.signal,
+          ),
+          request<IncidentList>(
+            `/monitors/${monitor.id}/incidents?limit=50&offset=${incidentOffset}`,
+            token, 'GET', undefined, controller.signal,
           ),
         ])
 
         if (!disposed) {
+          setIncidents(incidentData)
+          if (incidentData.total > 0 && incidentOffset >= incidentData.total) setIncidentOffset(0)
           setStats(statsData)
           setHistory(historyData)
           setError('')
@@ -95,6 +106,7 @@ export function MonitorDetails({
 
     return () => {
       disposed = true
+      controller.abort()
       clearTimeout(timer)
     }
   }, [
@@ -102,10 +114,11 @@ export function MonitorDetails({
     token,
     onExpired,
     refresh,
+    incidentOffset,
   ])
 
   const operationalStatus =
-    monitor.latest_check?.status ?? 'Pending'
+    history?.items[0]?.status ?? monitor.latest_check?.status ?? 'Pending'
 
   return (
     <>
@@ -296,6 +309,12 @@ export function MonitorDetails({
                 </strong>
               </article>
             </div>
+          </section>
+
+          <section className="panel" aria-labelledby="monitor-incidents-title">
+            <h2 id="monitor-incidents-title">Incidents</h2>
+            <IncidentTable incidents={incidents?.items ?? []} />
+            {incidents && <Pagination page={incidents} onOffset={setIncidentOffset} />}
           </section>
 
           <ResponseTimeChart

@@ -12,6 +12,11 @@ function metric(value: number | null, suffix = '') {
 export function DashboardSummary({ summary, loading }: Props) {
   const cards = [
     {
+      label: 'Open incidents',
+      value: summary?.open_incidents ?? 0,
+      className: (summary?.open_incidents ?? 0) > 0 ? 'metric-down' : '',
+    },
+    {
       label: 'Monitors',
       value: summary?.total_monitors ?? 0,
       className: '',

@@ -38,3 +38,14 @@ class MonitorCheckHistoryResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+class DashboardSummaryResponse(BaseModel):
+    total_monitors: int
+    active_monitors: int
+    paused_monitors: int
+    up_monitors: int
+    down_monitors: int
+    pending_monitors: int
+    open_incidents: int
+    checks_last_24h: int
+    average_response_time_ms_24h: float | None
