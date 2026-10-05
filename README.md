@@ -1,50 +1,55 @@
-# StatusWatch · v0.4.0
+# StatusWatch · v0.5.0
 
-Plataforma de monitoramento de aplicações, APIs e servidores. Projeto de portfólio focado em backend, DevOps, observabilidade e SRE, com evolução futura para Kubernetes.
+StatusWatch é uma plataforma de monitoramento HTTP/HTTPS desenvolvida como
+projeto de portfólio com foco em backend, infraestrutura, DevOps,
+observabilidade e SRE.
 
-Esta versão entrega o HTTP Monitoring Engine: checks GET assíncronos, UP/DOWN, código HTTP, tempo de resposta, timeout, proteção SSRF com pinagem de IP, scheduler persistido e concorrência limitada. Preserva autenticação JWT e CRUD de monitores.
+A versão **v0.5.0 — Dashboard + Histórico** consolida o fluxo principal de
+monitoramento iniciado nas versões anteriores.
 
-Detalhes, política SSRF, API e limites: [docs/monitoring-engine.md](docs/monitoring-engine.md). Evidências: [docs/validation-v0.4.md](docs/validation-v0.4.md).
+Nesta versão, o usuário pode:
+
+- criar e gerenciar monitores HTTP/HTTPS;
+- ativar e pausar monitoramento;
+- acompanhar o último estado operacional de cada monitor;
+- visualizar um dashboard consolidado;
+- consultar estatísticas das últimas 24 horas;
+- visualizar uptime e tempos de resposta;
+- acompanhar gráfico de response time;
+- consultar o histórico recente de checks.
+
+O worker executa os checks em segundo plano e persiste seus resultados no
+PostgreSQL. A API disponibiliza os dados ao frontend autenticado via JWT.
+
+> **Importante:** `Active/Paused` representa o estado de monitoramento.
+> `UP/DOWN` representa o último resultado operacional do serviço.
+> Um monitor ativo que ainda não possui checks é apresentado como `Pending`.
 
 ## Arquitetura e stack
 
 ```text
-React + TypeScript + Vite :5173
-              │ /api/health (proxy Vite)
-              ▼
-        FastAPI :8000
-          │       │
-          ▼       ▼
- PostgreSQL 17   Redis 7.4
-          ▲       ▲
-          └───┬───┘
-         Worker Python
-```
-
-Python 3.12, FastAPI, Uvicorn, SQLAlchemy, psycopg, redis-py e pydantic-settings. Frontend React com TypeScript e Vite, Node 22. Docker Compose coordena os cinco serviços. Detalhes em [docs/architecture.md](docs/architecture.md).
-
-```text
-backend/
-  app/
-    core/{config,dependencies,logging}.py
-    main.py
-    worker.py
-  tests/
-  Dockerfile
-  requirements.txt
-  requirements-dev.txt
-frontend/
-  src/{App.tsx,App.css,index.css,main.tsx}
-  vite.config.ts
-  Dockerfile
-  package.json
-  package-lock.json
-infrastructure/
-docs/
-compose.yaml
-.env.example
-.gitignore
-```
+                    ┌─────────────────────┐
+                    │ React + TypeScript  │
+                    │ Vite + Recharts     │
+                    │       :5173         │
+                    └──────────┬──────────┘
+                               │ /api
+                               ▼
+                    ┌─────────────────────┐
+                    │      FastAPI        │
+                    │       :8000         │
+                    └──────┬───────┬──────┘
+                           │       │
+                           ▼       ▼
+                    PostgreSQL   Redis
+                        17        7.4
+                           ▲       ▲
+                           └───┬───┘
+                               │
+                    ┌──────────┴──────────┐
+                    │   Python Worker     │
+                    │ HTTP Check Engine   │
+                    └─────────────────────┘
 
 ## Requisitos
 
@@ -158,7 +163,7 @@ O proxy local usa `http://127.0.0.1:8000`. Para outro destino, defina `API_PROXY
 
 | Método | Caminho | Resposta |
 | --- | --- | --- |
-| GET | `/` | 200: `{"name":"StatusWatch","version":"0.4.0"}` |
+| GET | `/` | 200: `{"name":"StatusWatch","version":"0.5.0"}` |
 | GET | `/health` | 200 saudável; 503 se PostgreSQL ou Redis falhar |
 
 Exemplo saudável:
