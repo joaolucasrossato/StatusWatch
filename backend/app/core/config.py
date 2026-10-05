@@ -1,11 +1,13 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    check_retention_days: int = Field(default=30, ge=1, le=3650)
+    notification_retention_days: int = Field(default=30, ge=1, le=3650)
 
     worker_max_concurrency: int = Field(default=10, ge=1, le=100)
     worker_poll_interval_seconds: float = Field(default=5, ge=0.1, le=60)
@@ -22,9 +24,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str
     redis_url: str
-    jwt_secret: str
-    jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60
+    jwt_secret: str = Field(min_length=32)
+    jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
+    access_token_expire_minutes: int = Field(default=60, ge=1)
 
     model_config = SettingsConfigDict(
         case_sensitive=False,

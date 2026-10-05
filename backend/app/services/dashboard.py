@@ -47,7 +47,7 @@ def get_dashboard_summary(
             func.row_number()
             .over(
                 partition_by=MonitorCheck.monitor_id,
-                order_by=MonitorCheck.checked_at.desc(),
+                order_by=(MonitorCheck.checked_at.desc(), MonitorCheck.id.desc()),
             )
             .label("row_number"),
         )
@@ -172,7 +172,7 @@ def list_monitor_checks(
     checks_statement = (
         select(MonitorCheck)
         .where(MonitorCheck.monitor_id == monitor_id)
-        .order_by(MonitorCheck.checked_at.desc())
+        .order_by(MonitorCheck.checked_at.desc(), MonitorCheck.id.desc())
         .offset(offset)
         .limit(limit)
     )

@@ -33,6 +33,7 @@ class NotificationDelivery(Base):
         CheckConstraint("event_type IN ('INCIDENT_OPENED', 'INCIDENT_RESOLVED')", name="ck_notification_deliveries_event"),
         CheckConstraint("status IN ('PENDING', 'PROCESSING', 'SENT', 'FAILED')", name="ck_notification_deliveries_status"),
         CheckConstraint("attempt_count BETWEEN 0 AND 3", name="ck_notification_deliveries_attempts"),
+        Index("ix_notification_deliveries_created_at", "created_at"),
         Index("ix_notification_deliveries_due", "status", "next_attempt_at"),
         Index("ix_notification_deliveries_incident_created", "incident_id", "created_at"),
         Index("ix_notification_deliveries_channel", "channel_id"),

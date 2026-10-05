@@ -23,3 +23,15 @@ def test_inactive_or_deleted_user(client, accounts, db, inactive):
         db.delete(record)
     db.commit()
     assert client.get("/monitors", headers=headers).status_code == (403 if inactive else 401)
+
+
+@pytest.mark.parametrize('expiry', ['expired', 'missing'])
+def test_invalid_expiry_rejected(client, accounts, expiry):
+    from datetime import datetime, timedelta, timezone
+    import jwt
+    from app.core.config import settings
+    payload = {'sub': accounts[0][0]['id'], 'type': 'access'}
+    if expiry == 'expired':
+        payload['exp'] = datetime.now(timezone.utc) - timedelta(seconds=1)
+    token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    assert client.get('/auth/me', headers={'Authorization': f'Bearer {token}'}).status_code == 401

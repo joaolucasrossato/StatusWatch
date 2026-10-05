@@ -40,7 +40,9 @@ def main() -> None:
         with test_engine.begin() as connection:
             connection.execute(text("INSERT INTO monitors (id, user_id, name, url, method, interval_seconds, timeout_seconds) SELECT :id, id, 'Migration', 'https://example.com', 'GET', 60, 10 FROM users"), {"id": uuid.uuid4()})
             connection.execute(text("INSERT INTO monitor_checks (id, monitor_id, status) SELECT :id, id, 'UP' FROM monitors"), {"id": uuid.uuid4()})
-        alembic("downgrade", "-1")
+        alembic("downgrade", "f7a10d92c630")
+        assert "ix_monitor_checks_checked_at" not in {index["name"] for index in inspect(test_engine).get_indexes("monitor_checks")}
+        alembic("downgrade", "ec2cf41a52d5")
         assert "notification_channels" not in inspect(test_engine).get_table_names()
         assert "notification_deliveries" not in inspect(test_engine).get_table_names()
         assert "incidents" in inspect(test_engine).get_table_names()

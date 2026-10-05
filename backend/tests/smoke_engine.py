@@ -56,6 +56,14 @@ def main(base: str, public_url: str | None) -> None:
             else:
                 assert result['status'] == 'UP', (result['status'], result['error_type'])
                 assert 200 <= result['http_status_code'] <= 399
+            summary = request('GET', '/dashboard/summary')
+            assert summary['total_monitors'] == len(paths)
+            assert summary['checks_last_24h'] >= 1
+            assert 'open_incidents' in summary
+            assert request('GET', path + '/checks')['total'] >= 1
+            assert request('GET', path + '/stats')['total_checks'] >= 1
+            assert request('GET', path + '/incidents')['total'] == 0
+            print('PASS: dashboard, history, stats and incident API', flush=True)
             request('PATCH', path, payload={'is_active': False})
             paused_result = request('GET', path + '/checks/latest')
             print('PASS: pending → persisted ' + result['status'] + ', code=' + str(result['http_status_code']), flush=True)
