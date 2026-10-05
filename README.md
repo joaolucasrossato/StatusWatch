@@ -1,11 +1,11 @@
-# StatusWatch · v0.6.0
+# StatusWatch · v1.0.0
 
 StatusWatch é uma plataforma de monitoramento HTTP/HTTPS desenvolvida como
 projeto de portfólio com foco em backend, infraestrutura, DevOps,
 observabilidade e SRE.
 
-A versão **v0.6.0** consolidou incidentes. A etapa v0.7 adiciona notificações
-com outbox transacional e retries no worker existente.
+A versão **v1.0.0** consolida monitoramento, incidentes e notificações
+com outbox transacional, retries, retenção e procedimentos de recuperação.
 
 Nesta versão, o usuário pode:
 
@@ -92,17 +92,22 @@ Os containers são `statuswatch-web`, `statuswatch-api`, `statuswatch-worker`, `
 | `POSTGRES_PASSWORD` | Senha inicial do PostgreSQL |
 | `DATABASE_URL` | URL SQLAlchemy com driver `postgresql+psycopg` |
 | `REDIS_URL` | URL Redis |
-| `JWT_SECRET` | Secret JWT obrigatório; use valor aleatório e diferente por ambiente |
+| `JWT_SECRET` | Secret JWT obrigatório (mínimo 32 caracteres); use valor aleatório e diferente por ambiente |
 | `JWT_ALGORITHM` | Algoritmo JWT, padrão HS256 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Validade do token, padrão 60 minutos |
 | `WORKER_MAX_CONCURRENCY` | Máximo de checks simultâneos, padrão 10 |
 | `WORKER_POLL_INTERVAL_SECONDS` | Pausa entre ciclos, padrão 5 segundos |
 | `WORKER_MAX_REDIRECTS` | Máximo de redirects validados, padrão 5 |
+| `CHECK_RETENTION_DAYS` | Dias de checks retidos (1–3650), padrão 30 |
+| `NOTIFICATION_RETENTION_DAYS` | Dias de entregas SENT/FAILED retidas (1–3650), padrão 30 |
+| `SMTP_HOST`, `SMTP_PORT` | Servidor SMTP opcional, porta padrão 587 |
+| `SMTP_USERNAME`, `SMTP_PASSWORD` | Credenciais SMTP via ambiente |
+| `SMTP_FROM`, `SMTP_USE_TLS` | Remetente e STARTTLS (padrão true) |
 | `API_PROXY_TARGET` | Destino do proxy Vite; definido no Compose como `http://api:8000` |
 
 `change_me` é apenas um placeholder de desenvolvimento. Mantenha a senha de `DATABASE_URL` consistente com `POSTGRES_PASSWORD`. Caracteres especiais na URL precisam de percent-encoding. `.env` é ignorado pelo Git e não entra nas imagens. Não compartilhe a saída de `docker compose config` com valores reais, pois ela contém as variáveis resolvidas.
 
-Entre containers, os hosts são `db`, `redis` e `api`, nunca localhost. `Settings` centraliza as variáveis do processo; Docker Compose carrega o `.env` e as injeta nos containers. As tabelas `users`, `monitors` e `monitor_checks` são criadas por migrations Alembic, aplicadas explicitamente antes de iniciar a aplicação.
+Entre containers, os hosts são `db`, `redis` e `api`, nunca localhost. `Settings` centraliza as variáveis do processo; Docker Compose carrega o `.env` e as injeta nos containers. As tabelas `users`, `monitors`, `monitor_checks`, `incidents`, `notification_channels` e `notification_deliveries` são criadas por migrations Alembic, aplicadas explicitamente antes de iniciar a aplicação.
 
 ## Desenvolvimento local
 
@@ -160,14 +165,38 @@ npm ci
 npm run dev
 ```
 
-O proxy local usa `http://127.0.0.1:8000`. Para outro destino, defina `API_PROXY_TARGET` no ambiente do Vite. O navegador acessa `/api/health` na mesma origem, sem precisar configurar CORS. Consulta ao carregar e novamente 15 segundos após cada verificação; timeout de 10 segundos. HTTP 503, resposta inválida ou falha de rede exibem `API Offline`, que significa que a API **ou uma dependência** não está saudável. O estado inicial é “Verificando API…”.
+O proxy local usa `http://127.0.0.1:8000`. Para outro destino, defina `API_PROXY_TARGET` no ambiente do Vite. O navegador acessa `/api/health` na mesma origem, sem precisar configurar CORS. Consulta ao carregar e novamente 30 segundos após cada verificação, somente enquanto a aba está visível; timeout de 10 segundos. HTTP 503, resposta inválida ou falha de rede exibem `API Offline`, que significa que a API **ou uma dependência** não está saudável. O estado inicial é “Verificando API…”.
 
 ## Endpoints
 
-| Método | Caminho | Resposta |
-| --- | --- | --- |
-| GET | `/` | 200: `{"name":"StatusWatch","version":"0.6.0"}` |
-| GET | `/health` | 200 saudável; 503 se PostgreSQL ou Redis falhar |
+| Método | Caminho |
+| --- | --- |
+| POST | `/auth/register` |
+| POST | `/auth/login` |
+| GET | `/auth/me` |
+| GET | `/monitors` |
+| POST | `/monitors` |
+| GET | `/monitors/{monitor_id}` |
+| PATCH | `/monitors/{monitor_id}` |
+| DELETE | `/monitors/{monitor_id}` |
+| GET | `/monitors/{monitor_id}/checks/latest` |
+| GET | `/dashboard/summary` |
+| GET | `/monitors/{monitor_id}/checks` |
+| GET | `/monitors/{monitor_id}/stats` |
+| GET | `/incidents` |
+| GET | `/incidents/{incident_id}` |
+| GET | `/monitors/{monitor_id}/incidents` |
+| GET | `/notification-channels` |
+| POST | `/notification-channels` |
+| GET | `/monitors/{monitor_id}/notification-channels` |
+| PATCH | `/notification-channels/{channel_id}` |
+| DELETE | `/notification-channels/{channel_id}` |
+| GET | `/notification-deliveries` |
+| GET | `/incidents/{incident_id}/notification-deliveries` |
+| GET | `/` |
+| GET | `/health` |
+
+`GET /` retorna `{"name":"StatusWatch","version":"1.0.0"}`. Swagger: `/docs`; schema: `/openapi.json`.
 
 Exemplo saudável:
 
@@ -184,6 +213,7 @@ cd backend
 pip install -r requirements-dev.txt
 python -m pytest -q
 cd ../frontend
+npm test
 npm run lint
 npm run build
 cd ..
@@ -204,7 +234,7 @@ docker compose start redis
 curl -i http://localhost:8000/health  # HTTP 200 após recuperação
 ```
 
-Registro da execução e limitações: [docs/validation.md](docs/validation.md).
+Registro histórico: [docs/validation.md](docs/validation.md). Validação da consolidação: [docs/validation-v1.0.md](docs/validation-v1.0.md).
 
 ## Comandos úteis
 
@@ -232,7 +262,21 @@ docker compose down
 
 ## Roadmap
 
-Implementado: v0.1 infraestrutura, v0.2 autenticação, v0.3 gerenciamento de monitores e v0.4 HTTP Monitoring Engine. v0.5 Dashboard + History está implementada; v0.6 adiciona incidentes automáticos e sua interface. v0.7 Notifications adiciona canais EMAIL/WEBHOOK, outbox persistente e histórico de entregas. Observabilidade externa, SLOs e Kubernetes ficam para versões futuras.
+Implementado:
+
+- v0.1 Foundation
+- v0.2 Authentication
+- v0.3 Monitor Management
+- v0.4 Monitoring Engine
+- v0.5 Dashboard + History
+- v0.6 Incidents
+- v0.7 Notifications
+
+- v1.0 Stable Release — consolidação, retenção e recuperação.
+
+Próximas versões: Observability, SLO/SLA, Error Budget, Public Status Pages,
+Kubernetes e GitOps. Nenhuma dessas etapas está implementada nesta release.
+
 
 
 ## Monitor Management
@@ -262,13 +306,13 @@ Contrato de configuração v0.3: [docs/monitors.md](docs/monitors.md). Autentica
 
 ### Produção
 
-Use `docker compose --env-file .env.production -f compose.prod.yaml`, configurando secrets exclusivos de produção. Execute `build`, `run --rm api alembic upgrade head` e `up -d --wait` com esses mesmos argumentos. O Nginx serve o frontend na porta local 8080 e encaminha `/api/` à API privada. PostgreSQL e Redis não publicam portas. Nunca execute downgrade no banco real para testar migrations; o teste em `backend/tests/validate_migrations.py` cria um banco descartável separado e exige CREATEDB.
+Use `docker compose --env-file .env.production -f compose.prod.yaml`, configurando secrets exclusivos de produção. Execute `build`, `up -d db redis`, `run --rm api alembic upgrade head` e `up -d --wait` com esses mesmos argumentos. O Nginx serve o frontend na porta local 8080 e encaminha `/api/` à API privada. PostgreSQL e Redis não publicam portas. Nunca execute downgrade no banco real para testar migrations; o teste em `backend/tests/validate_migrations.py` cria um banco descartável separado e exige CREATEDB.
 
 ## HTTP Monitoring Engine
 
 Async HTTP checks com GET, intervalos configuráveis, timeout total, UP/DOWN, HTTP status code e response time até os headers finais. O worker usa uma réplica, concorrência limitada e decisões baseadas no último check persistido. A interface mostra Latest monitor status (UP/DOWN/Pending) separado de Active/Paused e atualiza a cada 30 segundos enquanto visível. Sem checks artificiais para Pending.
 
-SSRF: bloqueio de destinos não públicos IPv4/IPv6, validação de todos os IPs DNS, pinagem da conexão, TLS verificado e redirects manuais validados. Não substitui controles de egress de rede. Checks crescem sem retenção automática nesta versão. Veja as limitações na documentação do engine.
+SSRF: bloqueio de destinos não públicos IPv4/IPv6, validação de todos os IPs DNS, pinagem da conexão, TLS verificado e redirects manuais validados. Não substitui controles de egress de rede. Checks têm retenção configurável de 30 dias por padrão. Veja as limitações na documentação do engine.
 
 ## Incidentes
 
@@ -312,7 +356,46 @@ npm run lint
 npm run build
 ```
 
-Para v1.0: priorizar retenção de dados, egress em produção, criptografia dos
-destinos, replay controlado de entregas e testes operacionais de recuperação.
+Retenção e procedimentos operacionais estão descritos abaixo. Criptografia de
+destinos com gestão de chaves e replay controlado de entregas ficam para evolução.
 Página pública de status, SLO/SLA, billing, Kubernetes e observabilidade externa
 continuam fora desta versão.
+
+
+## Dashboard e histórico
+
+`GET /dashboard/summary` retorna total, active, paused, UP, DOWN, pending,
+open_incidents, checks_last_24h e average_response_time_ms_24h. DOWN não é
+sinônimo de incidente aberto. Stats sem checks retornam uptime e média null.
+History aceita limit/offset; stats aceita window_hours de 1 a 168 (padrão 24).
+Todas as consultas são por usuário e retornam Cache-Control: no-store.
+
+## Retention
+
+Cleanup no worker ao iniciar e a cada hora. CHECK_RETENTION_DAYS e
+NOTIFICATION_RETENTION_DAYS têm padrão 30 dias; apenas entregas SENT/FAILED são
+apagadas. Incidentes e entregas pendentes são preservados. Consulte
+[política de retenção](docs/retention.md), incluindo efeito sobre monitores
+pausados e janelas de estatísticas.
+
+## Migrations
+
+Execute upgrade antes de iniciar o novo código. A migration de consolidação
+`a81d4e29b607` adiciona índices por data; não altera migrations aplicadas.
+`alembic current` deve coincidir com o único head e `alembic check` não deve
+produzir operações novas. Para banco grande, programe janela para criação dos
+índices. [Procedimentos e testes isolados](docs/operations.md).
+
+## Security
+
+SSRF com DNS validado e IP fixado, TLS e validação a cada redirect de checks;
+webhooks não seguem redirects. JWT exige secret de pelo menos 32 caracteres e
+expiração positiva. URLs de webhook são mascaradas, mas os destinos permanecem
+em texto claro no banco. Produção exige secrets próprios, HTTPS no gateway,
+proteção de backups e firewall de egress. A auditoria identificou advisories de
+Starlette/pytest com upgrades coordenados pendentes; veja a análise de
+aplicabilidade e os limites em [docs/security.md](docs/security.md).
+
+Falhas operacionais, restart, SMTP/webhook e retries:
+[docs/operations.md](docs/operations.md). Documentos v0.x preservam o contexto
+histórico; as políticas atuais de retenção/segurança e este README prevalecem.

@@ -2,6 +2,8 @@
 
 Executada em 04/10/2026.
 
+Registro histórico preservado. Consulte [validação v1.0](validation-v1.0.md) para a consolidação atual.
+
 - `npm run lint`: aprovado.
 - `npm run build`: aprovado (TypeScript e build Vite).
 - `python3 -m compileall -q backend/app backend/tests`: aprovado.
