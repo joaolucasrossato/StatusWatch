@@ -11,6 +11,36 @@ export type Monitor = MonitorInput & {
   id: string; user_id: string; created_at: string; updated_at: string; latest_check: MonitorCheck | null
 }
 
+export type DashboardSummary = {
+  total_monitors: number
+  active_monitors: number
+  paused_monitors: number
+  up_monitors: number
+  down_monitors: number
+  pending_monitors: number
+  checks_last_24h: number
+  average_response_time_ms_24h: number | null
+}
+
+export type MonitorStats = {
+  monitor_id: string
+  window_hours: number
+  total_checks: number
+  successful_checks: number
+  failed_checks: number
+  uptime_percentage: number | null
+  average_response_time_ms: number | null
+  minimum_response_time_ms: number | null
+  maximum_response_time_ms: number | null
+}
+
+export type MonitorCheckHistory = {
+  items: MonitorCheck[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export class ApiError extends Error {
   status: number
   constructor(message: string, status: number) { super(message); this.status = status }
