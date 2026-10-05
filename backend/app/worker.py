@@ -9,6 +9,7 @@ from app.core.dependencies import Dependencies
 from app.core.logging import configure_logging
 from app.monitoring.checker import create_client
 from app.monitoring.scheduler import scheduler_loop
+from app.notifications.worker import delivery_loop
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +35,19 @@ async def run_worker() -> int:
                 sessions, client, stop, settings.worker_max_concurrency,
                 settings.worker_poll_interval_seconds, settings.worker_max_redirects,
             ))
+            deliveries = asyncio.create_task(delivery_loop(sessions, client, settings, stop))
             shutdown = asyncio.create_task(stop.wait())
             try:
-                await asyncio.wait((scheduler, shutdown), return_when=asyncio.FIRST_COMPLETED)
+                await asyncio.wait((scheduler, deliveries, shutdown), return_when=asyncio.FIRST_COMPLETED)
+                if deliveries.done():
+                    await deliveries
                 if scheduler.done():
                     await scheduler
             finally:
+                deliveries.cancel()
                 scheduler.cancel()
                 shutdown.cancel()
-                await asyncio.gather(scheduler, shutdown, return_exceptions=True)
+                await asyncio.gather(scheduler, deliveries, shutdown, return_exceptions=True)
         return 0
     finally:
         await asyncio.to_thread(dependencies.close)

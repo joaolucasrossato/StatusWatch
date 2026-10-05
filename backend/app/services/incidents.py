@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.incident import Incident
 from app.models.monitor_check import MonitorCheck
+from app.services.notification_outbox import enqueue_transition
 
 INCIDENT_FAILURE_THRESHOLD = 3
 
@@ -36,6 +37,7 @@ def process_incident_for_check(
 
         open_incident.status = "RESOLVED"
         open_incident.resolved_at = check.checked_at
+        enqueue_transition(db, open_incident, "INCIDENT_RESOLVED")
         return open_incident
 
     if check.status != "DOWN":
@@ -78,6 +80,7 @@ def process_incident_for_check(
     )
 
     db.add(incident)
+    enqueue_transition(db, incident, "INCIDENT_OPENED")
 
     return incident
 

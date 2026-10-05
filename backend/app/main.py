@@ -15,6 +15,7 @@ from app.api.routes.dashboard import router as dashboard_router
 from app.api.routes.monitor_history import router as monitor_history_router
 
 from app.api.routes.incidents import router as incidents_router
+from app.api.routes.notifications import router as notifications_router
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ app.include_router(monitors_router)
 app.include_router(dashboard_router)
 app.include_router(monitor_history_router)
 app.include_router(incidents_router)
+app.include_router(notifications_router)
 
 def get_dependencies(request: Request) -> Dependencies:
     return request.app.state.dependencies

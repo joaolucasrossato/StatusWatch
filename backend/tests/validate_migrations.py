@@ -41,12 +41,16 @@ def main() -> None:
             connection.execute(text("INSERT INTO monitors (id, user_id, name, url, method, interval_seconds, timeout_seconds) SELECT :id, id, 'Migration', 'https://example.com', 'GET', 60, 10 FROM users"), {"id": uuid.uuid4()})
             connection.execute(text("INSERT INTO monitor_checks (id, monitor_id, status) SELECT :id, id, 'UP' FROM monitors"), {"id": uuid.uuid4()})
         alembic("downgrade", "-1")
-        assert "monitor_checks" not in inspect(test_engine).get_table_names()
+        assert "notification_channels" not in inspect(test_engine).get_table_names()
+        assert "notification_deliveries" not in inspect(test_engine).get_table_names()
+        assert "incidents" in inspect(test_engine).get_table_names()
+        assert "monitor_checks" in inspect(test_engine).get_table_names()
         with test_engine.connect() as connection:
             assert connection.scalar(text("SELECT count(*) FROM users")) == 1
             assert connection.scalar(text("SELECT count(*) FROM monitors")) == 1
         alembic("upgrade", "head")
-        assert "monitor_checks" in inspect(test_engine).get_table_names()
+        assert "notification_channels" in inspect(test_engine).get_table_names()
+        assert "notification_deliveries" in inspect(test_engine).get_table_names()
         alembic("current")
         alembic("check")
         print("PASS: upgrade, downgrade preserves users and monitors, re-upgrade, metadata check")
