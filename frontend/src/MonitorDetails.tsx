@@ -9,6 +9,7 @@ import {
   type MonitorStats,
 } from './api'
 import { IncidentTable, Pagination } from './Incidents'
+import { Notifications } from './Notifications'
 import { ResponseTimeChart } from './ResponseTimeChart'
 
 type Props = {
@@ -36,6 +37,7 @@ export function MonitorDetails({
   onBack,
   onExpired,
 }: Props) {
+  const [showNotifications, setShowNotifications] = useState(false)
   const [incidents, setIncidents] = useState<IncidentList | null>(null)
   const [incidentOffset, setIncidentOffset] = useState(0)
   const [stats, setStats] = useState<MonitorStats | null>(null)
@@ -52,7 +54,7 @@ export function MonitorDetails({
     let timer: ReturnType<typeof setTimeout>
 
     async function loadDetails() {
-      if (document.visibilityState === 'hidden') {
+      if (document.visibilityState === 'hidden' || showNotifications) {
         if (!disposed) {
           timer = setTimeout(loadDetails, 30_000)
         }
@@ -115,20 +117,24 @@ export function MonitorDetails({
     onExpired,
     refresh,
     incidentOffset,
+    showNotifications,
   ])
+
+  if (showNotifications) return <Notifications monitor={monitor} token={token} onExpired={onExpired} onBack={() => setShowNotifications(false)} />
 
   const operationalStatus =
     history?.items[0]?.status ?? monitor.latest_check?.status ?? 'Pending'
 
   return (
     <>
-      <div className="details-navigation">
+      <div className="details-navigation actions">
         <button
           className="text-button"
           onClick={onBack}
         >
           ← Back to monitors
         </button>
+        <button onClick={() => setShowNotifications(true)}>Notifications</button>
       </div>
 
       <div className="page-heading monitor-detail-heading">

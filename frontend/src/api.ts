@@ -85,3 +85,19 @@ export type Incident = {
 }
 export type Page<T> = { items: T[]; total: number; limit: number; offset: number }
 export type IncidentList = Page<Incident>
+
+export type ChannelType = 'EMAIL' | 'WEBHOOK'
+export type NotificationChannel = {
+  id: string; monitor_id: string; type: ChannelType; target: string; target_redacted: boolean
+  is_active: boolean; notify_on_open: boolean; notify_on_resolved: boolean
+  created_at: string; updated_at: string
+}
+export type ChannelInput = {
+  type: ChannelType; target: string; is_active: boolean; notify_on_open: boolean; notify_on_resolved: boolean
+}
+export type DeliveryStatus = 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED'
+export type EventType = 'INCIDENT_OPENED' | 'INCIDENT_RESOLVED'
+export type NotificationDelivery = {
+  id: string; incident_id: string; channel_id: string; event_type: EventType; status: DeliveryStatus
+  attempt_count: number; last_error: string | null; created_at: string; sent_at: string | null; next_attempt_at: string
+}
