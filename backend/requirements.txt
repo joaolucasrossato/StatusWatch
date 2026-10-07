@@ -12,3 +12,5 @@ email-validator==2.3.0
 httpx==0.28.1
 # Pin the transport supporting the SNI extension used by IP-pinned checks.
 httpcore==1.0.9
+
+prometheus-client==0.26.0

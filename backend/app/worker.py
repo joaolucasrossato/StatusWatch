@@ -2,6 +2,7 @@ import asyncio
 import logging
 import signal
 
+from prometheus_client import start_http_server
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
@@ -22,6 +23,10 @@ async def run_worker() -> int:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
     dependencies = Dependencies(settings)
+
+    metrics_server = None
+    metrics_thread = None
+
     try:
         services = await asyncio.to_thread(dependencies.check)
         for name, status in services.items():
@@ -29,6 +34,17 @@ async def run_worker() -> int:
         if any(status != "healthy" for status in services.values()):
             logger.error("Worker cannot start: dependencies unavailable")
             return 1
+
+        metrics_server, metrics_thread = start_http_server(
+            settings.worker_metrics_port,
+            addr="0.0.0.0",
+        )
+
+        logger.info(
+            "Worker metrics server listening on port %s",
+            settings.worker_metrics_port,
+        )
+
         sessions = sessionmaker(bind=dependencies.database, expire_on_commit=False)
         async with create_client(settings.worker_max_concurrency) as client:
             logger.info("StatusWatch Worker ready.")
@@ -55,6 +71,12 @@ async def run_worker() -> int:
                 await asyncio.gather(scheduler, deliveries, retention, shutdown, return_exceptions=True)
         return 0
     finally:
+        if metrics_server is not None:
+            await asyncio.to_thread(metrics_server.shutdown)
+            await asyncio.to_thread(metrics_server.server_close)
+
+        if metrics_thread is not None:
+            await asyncio.to_thread(metrics_thread.join, timeout=5)
         await asyncio.to_thread(dependencies.close)
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.remove_signal_handler(sig)

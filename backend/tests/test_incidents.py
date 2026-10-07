@@ -345,3 +345,33 @@ def test_check_is_rolled_back_when_incident_processing_fails(
 
     assert stored_checks == []
     assert stored_incidents == []
+
+@pytest.mark.parametrize('event_name', ['opened', 'resolved'])
+@pytest.mark.parametrize('rollback', [False, True])
+def test_transition_metrics_only_after_commit(
+    client, accounts, db, metric_value, fail_commit, event_name, rollback,
+):
+    monitor = create_monitor(client, accounts[0][1])
+    job = create_job(monitor)
+    sessions = sessionmaker(bind=db.bind)
+    for _ in range(2 if event_name == 'opened' else 3):
+        persist(sessions, job, 'DOWN')
+    before = {event: metric_value('incident_transitions_total', event=event)
+              for event in ('opened', 'resolved')}
+    if rollback:
+        fail_commit(sessions)
+        with pytest.raises(RuntimeError, match='commit failed'):
+            persist(sessions, job, 'DOWN' if event_name == 'opened' else 'UP')
+    else:
+        persist(sessions, job, 'DOWN' if event_name == 'opened' else 'UP')
+        # Repeating the same state must not report another transition.
+        persist(sessions, job, 'DOWN' if event_name == 'opened' else 'UP')
+    for event in before:
+        assert metric_value('incident_transitions_total', event=event) - before[event] == int(
+            not rollback and event == event_name
+        )
+    stored = incidents(db)
+    if event_name == 'opened':
+        assert len(stored) == int(not rollback)
+    else:
+        assert stored[0].status == ('OPEN' if rollback else 'RESOLVED')
