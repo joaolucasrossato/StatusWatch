@@ -69,3 +69,27 @@ def accounts(client, db):
         headers = {"Authorization": f"Bearer {token.json()['access_token']}"}
         result.append((user, headers))
     return result
+
+
+@pytest.fixture
+def metric_value():
+    from prometheus_client import REGISTRY
+
+    def value(name, **labels):
+        return REGISTRY.get_sample_value('statuswatch_' + name, labels) or 0
+
+    return value
+
+
+@pytest.fixture
+def fail_commit():
+    from sqlalchemy import event
+
+    def install(sessions):
+        def fail(session):
+            # Exercise rollback even after all pending writes were flushed.
+            session.flush()
+            raise RuntimeError('commit failed')
+        event.listen(sessions, 'before_commit', fail)
+
+    return install

@@ -4,14 +4,23 @@ import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
+from time import perf_counter
 
 import httpx
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Monitor, MonitorCheck
-from app.monitoring.checker import CheckResult, check_http
+from app.monitoring.checker import ERRORS, CheckResult, check_http
 from app.services.incidents import process_incident_for_check
+from app.observability.worker_metrics import (
+    INCIDENT_TRANSITIONS,
+    MONITOR_CHECK_DURATION,
+    MONITOR_CHECK_FAILURES,
+    MONITOR_CHECKS,
+    SCHEDULER_CYCLE_DURATION,
+    SCHEDULER_CYCLES,
+)
 
 logger = logging.getLogger(__name__)
 SessionFactory = Callable[[], Session]
@@ -143,8 +152,38 @@ def persist_check(
             elif incident.resolved_at == check.checked_at:
                 transition = "incident_resolved"
 
+    # The transaction has committed; count here even if run_cycle is cancelled
+    # while awaiting this thread's result.
+    MONITOR_CHECKS.labels(status=result.status).inc()
+    if result.response_time_ms is not None:
+        MONITOR_CHECK_DURATION.labels(status=result.status).observe(
+            result.response_time_ms / 1000,
+        )
+    if result.status == "DOWN":
+        if result.error_type in ERRORS:
+            error_type = result.error_type
+        elif result.error_type is None and result.http_status_code is not None:
+            error_type = "http_error"
+        else:
+            error_type = "unexpected_error"
+        MONITOR_CHECK_FAILURES.labels(error_type=error_type).inc()
+
     if transition:
-        logger.info("%s monitor_id=%s incident_id=%s", transition, job.id, incident_id)
+        event = (
+            "opened"
+            if transition == "incident_opened"
+            else "resolved"
+        )
+
+        INCIDENT_TRANSITIONS.labels(event=event).inc()
+
+        logger.info(
+            "%s monitor_id=%s incident_id=%s",
+            transition,
+            job.id,
+            incident_id,
+        )
+
     return True
 
 
@@ -234,6 +273,8 @@ async def scheduler_loop(
     max_redirects: int,
 ) -> None:
     while not stop.is_set():
+        started_at = perf_counter()
+
         try:
             await run_cycle(
                 sessions,
@@ -242,9 +283,17 @@ async def scheduler_loop(
                 max_redirects,
             )
         except Exception as exc:
+            SCHEDULER_CYCLES.labels(result="error").inc()
+
             logger.error(
                 "Scheduler cycle failed class=%s",
                 type(exc).__name__,
+            )
+        else:
+            SCHEDULER_CYCLES.labels(result="success").inc()
+        finally:
+            SCHEDULER_CYCLE_DURATION.observe(
+                perf_counter() - started_at
             )
 
         try:

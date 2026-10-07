@@ -124,3 +124,85 @@ def test_save_failure_does_not_cancel_others(monkeypatch):
     monkeypatch.setattr(scheduler, "persist_check", persist)
     asyncio.run(run_cycle(None, None, 1, 5))
     assert saved == jobs[1:]
+
+
+@pytest.mark.parametrize('status,error_type', [('UP', None), ('DOWN', 'timeout'),
+                                               ('DOWN', 'private-error-detail'), ('DOWN', None)])
+@pytest.mark.parametrize('action', ['commit', 'rollback', 'paused'])
+def test_persisted_check_metrics(
+    client, accounts, db, metric_value, fail_commit, status, error_type, action,
+):
+    from test_incidents import create_job, create_monitor
+
+    monitor = create_monitor(client, accounts[0][1])
+    job = create_job(monitor)
+    sessions = sessionmaker(bind=db.bind)
+    error_label = ('http_error' if error_type is None else
+                   'timeout' if error_type == 'timeout' else 'unexpected_error')
+
+    def snapshot():
+        return (
+            metric_value('monitor_checks_total', status=status),
+            metric_value('monitor_check_duration_seconds_count', status=status),
+            metric_value('monitor_check_duration_seconds_sum', status=status),
+            metric_value('monitor_check_failures_total', error_type=error_label),
+        )
+
+    before = snapshot()
+    result = CheckResult(status, http_status_code=200 if status == 'UP' else 500,
+                         response_time_ms=250, error_type=error_type)
+    if action == 'rollback':
+        fail_commit(sessions)
+        with pytest.raises(RuntimeError, match='commit failed'):
+            persist_check(sessions, job, result)
+    elif action == 'paused':
+        db.get(Monitor, job.id).is_active = False
+        db.commit()
+        assert not persist_check(sessions, job, result)
+    else:
+        assert persist_check(sessions, job, result)
+    expected = (1, 1, 0.25, int(status == 'DOWN')) if action == 'commit' else (0, 0, 0, 0)
+    assert tuple(after - prior for after, prior in zip(snapshot(), before)) == pytest.approx(expected)
+    db.expire_all()
+    assert len(list(db.scalars(select(MonitorCheck)))) == int(action == 'commit')
+
+
+def test_cycle_metrics_exclude_poll_wait(monkeypatch, metric_value):
+    import app.monitoring.scheduler as scheduler
+
+    clock = 0.0
+    monkeypatch.setattr(scheduler, 'perf_counter', lambda: clock)
+    before = {result: metric_value('scheduler_cycles_total', result=result)
+              for result in ('success', 'error')}
+    duration_before = metric_value('scheduler_cycle_duration_seconds_sum')
+    count_before = metric_value('scheduler_cycle_duration_seconds_count')
+
+    class Stop:
+        stopped = False
+
+        def is_set(self):
+            return self.stopped
+
+        async def wait(self):
+            nonlocal clock
+            clock += 100  # Simulate polling time without sleeping in the test.
+            if calls == 2:
+                self.stopped = True
+            else:
+                raise TimeoutError
+
+    calls = 0
+
+    async def cycle(*args):
+        nonlocal calls, clock
+        calls += 1
+        clock += 2
+        if calls == 1:
+            raise RuntimeError('database unavailable')
+
+    monkeypatch.setattr(scheduler, 'run_cycle', cycle)
+    asyncio.run(scheduler_loop(None, None, Stop(), 1, 1, 5))
+    for result in before:
+        assert metric_value('scheduler_cycles_total', result=result) - before[result] == 1
+    assert metric_value('scheduler_cycle_duration_seconds_sum') - duration_before == 4
+    assert metric_value('scheduler_cycle_duration_seconds_count') - count_before == 2

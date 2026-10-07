@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     worker_max_concurrency: int = Field(default=10, ge=1, le=100)
     worker_poll_interval_seconds: float = Field(default=5, ge=0.1, le=60)
     worker_max_redirects: int = Field(default=5, ge=0, le=10)
+    worker_metrics_port: int = Field(default=9101, ge=1024, le=65535)
 
     smtp_host: str = ""
     smtp_port: int = Field(default=587, ge=1, le=65535)

@@ -239,3 +239,171 @@ def test_transport_failures_leave_delivery_retryable(outbox, db, monkeypatch, ki
     assert delivery.status == 'PENDING'
     assert delivery.attempt_count == 1
     assert delivery.last_error == 'delivery_transport_error'
+
+
+def notification_snapshot(metric_value, kind):
+    labels = {'channel_type': kind}
+    return {
+        **{outcome: metric_value('notification_delivery_attempts_total', **labels, outcome=outcome)
+           for outcome in ('success', 'error', 'cancelled')},
+        **{status: metric_value('notification_deliveries_total', **labels, status=status)
+           for status in ('SENT', 'FAILED')},
+        'retry': metric_value('notification_delivery_retries_total', **labels),
+        'duration': metric_value('notification_delivery_duration_seconds_count', **labels),
+    }
+
+
+@pytest.mark.parametrize('kind', ['EMAIL', 'WEBHOOK'])
+@pytest.mark.parametrize('outcome,attempts,status', [
+    ('success', 0, 'SENT'), ('error', 0, 'PENDING'), ('error', 2, 'FAILED'),
+    ('cancelled', 0, 'PROCESSING'),
+])
+def test_delivery_metrics(outbox, db, monkeypatch, metric_value, kind, outcome, attempts, status):
+    from app.models import NotificationChannel
+
+    sessions, job, channel = outbox
+    db.get(NotificationChannel, uuid.UUID(channel['id'])).type = kind
+    db.commit()
+    open_incident(sessions, job)
+    rows(db)[0].attempt_count = attempts
+    db.commit()
+
+    def send(*args):
+        if outcome == 'error':
+            raise RuntimeError('private transport details')
+        if outcome == 'cancelled':
+            raise asyncio.CancelledError
+    monkeypatch.setattr('app.notifications.worker.send_email', send)
+    monkeypatch.setattr('app.notifications.worker.send_webhook', AsyncMock(side_effect=send))
+    before = notification_snapshot(metric_value, kind)
+    if outcome == 'cancelled':
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(run_delivery_cycle(sessions, None, Settings()))
+    else:
+        asyncio.run(run_delivery_cycle(sessions, None, Settings()))
+    after = notification_snapshot(metric_value, kind)
+    expected = {key: 0 for key in before}
+    expected.update({outcome: 1, 'duration': 1})
+    if status in ('SENT', 'FAILED'):
+        expected[status] = 1
+    elif status == 'PENDING':
+        expected['retry'] = 1
+    assert {key: after[key] - before[key] for key in before} == expected
+    assert rows(db)[0].status == status
+
+
+@pytest.mark.parametrize('reason', ['disabled', 'expired'])
+@pytest.mark.parametrize('rollback', [False, True])
+def test_claim_terminal_metrics_after_commit(outbox, db, metric_value, fail_commit, reason, rollback):
+    from app.models import NotificationChannel
+
+    sessions, job, channel = outbox
+    open_incident(sessions, job)
+    if reason == 'disabled':
+        db.get(NotificationChannel, uuid.UUID(channel['id'])).is_active = False
+        db.commit()
+    else:
+        delivery = rows(db)[0]
+        delivery.status = 'PROCESSING'
+        delivery.attempt_count = 3
+        delivery.claim_token = uuid.uuid4()
+        db.commit()
+    before = notification_snapshot(metric_value, 'EMAIL')
+    now = datetime.now(timezone.utc) + timedelta(seconds=1)
+    if rollback:
+        fail_commit(sessions)
+        with pytest.raises(RuntimeError, match='commit failed'):
+            claim_one(sessions, now)
+        assert rows(db)[0].status != 'FAILED'
+    else:
+        assert claim_one(sessions, now) is None
+        assert rows(db)[0].status == 'FAILED'
+        assert claim_one(sessions, now) is None
+    after = notification_snapshot(metric_value, 'EMAIL')
+    expected = {key: 0 for key in before}
+    expected['FAILED'] = int(not rollback)
+    assert {key: after[key] - before[key] for key in before} == expected
+
+
+@pytest.mark.parametrize('error,attempts', [(None, 0), ('delivery_transport_error', 0),
+                                          ('delivery_transport_error', 2)])
+def test_finish_commit_failure_does_not_count_persisted_state(
+    outbox, db, metric_value, fail_commit, error, attempts,
+):
+    sessions, job, _ = outbox
+    open_incident(sessions, job)
+    rows(db)[0].attempt_count = attempts
+    db.commit()
+    now = datetime.now(timezone.utc) + timedelta(seconds=1)
+    claimed = claim_one(sessions, now)
+    before = notification_snapshot(metric_value, 'EMAIL')
+    fail_commit(sessions)
+    with pytest.raises(RuntimeError, match='commit failed'):
+        finish(sessions, claimed, error, now)
+    assert notification_snapshot(metric_value, 'EMAIL') == before
+    assert rows(db)[0].status == 'PROCESSING'
+
+
+def test_stale_finish_does_not_count_delivery(outbox, metric_value):
+    sessions, job, _ = outbox
+    open_incident(sessions, job)
+    now = datetime.now(timezone.utc) + timedelta(seconds=1)
+    stale = claim_one(sessions, now)
+    current = claim_one(sessions, now + timedelta(seconds=301))
+    before = notification_snapshot(metric_value, 'EMAIL')
+    assert finish(sessions, stale, None, now) is None
+    assert notification_snapshot(metric_value, 'EMAIL') == before
+    assert finish(sessions, current, None, now) == 'SENT'
+    after = notification_snapshot(metric_value, 'EMAIL')
+    assert after['SENT'] - before['SENT'] == 1
+    assert finish(sessions, current, None, now) is None
+    assert notification_snapshot(metric_value, 'EMAIL') == after
+
+
+def test_deleted_channel_cascades_without_false_terminal_metric(outbox, db, metric_value):
+    from app.models import NotificationChannel
+
+    sessions, job, channel = outbox
+    open_incident(sessions, job)
+    before = notification_snapshot(metric_value, 'EMAIL')
+    db.delete(db.get(NotificationChannel, uuid.UUID(channel['id'])))
+    db.commit()
+    assert claim_one(sessions, datetime.now(timezone.utc) + timedelta(seconds=1)) is None
+    assert rows(db) == []
+    assert notification_snapshot(metric_value, 'EMAIL') == before
+
+
+def test_cancelled_waiter_still_counts_committed_finish(outbox, db, metric_value):
+    import threading
+    from sqlalchemy import event
+
+    sessions, job, _ = outbox
+    open_incident(sessions, job)
+    now = datetime.now(timezone.utc) + timedelta(seconds=1)
+    claimed = claim_one(sessions, now)
+    before = notification_snapshot(metric_value, 'EMAIL')
+    release = threading.Event()
+
+    async def run():
+        committing = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def before_commit(session):
+            loop.call_soon_threadsafe(committing.set)
+            assert release.wait(timeout=5)
+
+        event.listen(sessions, 'before_commit', before_commit)
+        task = asyncio.create_task(asyncio.to_thread(finish, sessions, claimed, None, now))
+        try:
+            await asyncio.wait_for(committing.wait(), timeout=5)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        finally:
+            release.set()
+
+    # asyncio.run also waits for the executor thread to finish its transaction.
+    asyncio.run(run())
+    assert rows(db)[0].status == 'SENT'
+    after = notification_snapshot(metric_value, 'EMAIL')
+    assert after == {**before, 'SENT': before['SENT'] + 1}
