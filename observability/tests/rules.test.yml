@@ -1,0 +1,288 @@
+rule_files:
+- /etc/prometheus/recording_rules.yml
+- /etc/prometheus/alerts.yml
+evaluation_interval: 1m
+tests:
+- name: SLI ratios and budget use eligible traffic; health probes excluded
+  interval: 1m
+  input_series:
+  - series: statuswatch_api_http_requests_total{job="api",method="GET",route="/monitors",status_code="200"}
+    values: 0+99x20
+  - series: statuswatch_api_http_requests_total{job="api",method="GET",route="/monitors",status_code="500"}
+    values: 0+1x20
+  - series: statuswatch_api_http_requests_total{job="api",method="GET",route="/health",status_code="200"}
+    values: 0+100000x20
+  - series: statuswatch_scheduler_cycles_total{job="worker",result="success"}
+    values: 0+999x20
+  - series: statuswatch_scheduler_cycles_total{job="worker",result="error"}
+    values: 0+1x20
+  promql_expr_test:
+  - expr: statuswatch:api_error_ratio5m
+    eval_time: 10m
+    exp_samples:
+    - labels: statuswatch:api_error_ratio5m
+      value: 0.01
+  - expr: statuswatch:api_availability30d
+    eval_time: 10m
+    exp_samples:
+    - labels: statuswatch:api_availability30d
+      value: 0.99
+  - expr: statuswatch:api_error_budget_remaining30d
+    eval_time: 10m
+    exp_samples:
+    - labels: statuswatch:api_error_budget_remaining30d
+      value: -9
+  - expr: statuswatch:api_burn_rate1h
+    eval_time: 10m
+    exp_samples:
+    - labels: statuswatch:api_burn_rate1h
+      value: 10
+  - expr: statuswatch:scheduler_success_ratio30d
+    eval_time: 10m
+    exp_samples:
+    - labels: statuswatch:scheduler_success_ratio30d
+      value: 0.999
+- name: No traffic is not 100 percent availability
+  interval: 1m
+  input_series:
+  - series: statuswatch_api_http_requests_total{job="api",method="GET",route="/monitors",status_code="200"}
+    values: 0+0x20
+  promql_expr_test:
+  - expr: statuswatch:api_error_ratio5m
+    eval_time: 10m
+    exp_samples: []
+  - expr: statuswatch:api_availability30d
+    eval_time: 10m
+    exp_samples: []
+  - expr: statuswatch:api_latency_good_ratio30d
+    eval_time: 10m
+    exp_samples: []
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: StatusWatchApiHighErrorRate
+    exp_alerts: []
+- name: No error series means zero errors when traffic exists
+  interval: 1m
+  input_series:
+  - series: statuswatch_api_http_requests_total{job="api",method="GET",route="/monitors",status_code="200"}
+    values: 0+100x20
+  promql_expr_test:
+  - expr: statuswatch:api_error_ratio5m
+    eval_time: 10m
+    exp_samples:
+    - labels: statuswatch:api_error_ratio5m
+      value: 0
+  - expr: statuswatch:api_availability30d
+    eval_time: 10m
+    exp_samples:
+    - labels: statuswatch:api_availability30d
+      value: 1
+- name: Counter reset does not become negative traffic
+  interval: 1m
+  input_series:
+  - series: statuswatch_api_http_requests_total{job="api",method="GET",route="/monitors",status_code="200"}
+    values: 0+100x5 0+100x15
+  promql_expr_test:
+  - expr: statuswatch:api_availability30d
+    eval_time: 10m
+    exp_samples:
+    - labels: statuswatch:api_availability30d
+      value: 1
+  - expr: statuswatch:api_error_ratio5m
+    eval_time: 10m
+    exp_samples:
+    - labels: statuswatch:api_error_ratio5m
+      value: 0
+- name: Sustained 10 percent errors alert; pending period respected
+  interval: 1m
+  input_series:
+  - series: statuswatch_api_http_requests_total{job="api",method="GET",route="/monitors",status_code="200"}
+    values: 0+90x30
+  - series: statuswatch_api_http_requests_total{job="api",method="GET",route="/monitors",status_code="500"}
+    values: 0+10x30
+  alert_rule_test:
+  - eval_time: 2m
+    alertname: StatusWatchApiHighErrorRate
+    exp_alerts: []
+  - eval_time: 12m
+    alertname: StatusWatchApiHighErrorRate
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: API 5xx ratio above 5%
+        description: Eligible API traffic exceeds 0.1 requests/s with sustained server errors. Check API and dependency health.
+- name: A single low-volume error does not page
+  interval: 1m
+  input_series:
+  - series: statuswatch_api_http_requests_total{job="api",method="GET",route="/monitors",status_code="500"}
+    values: 0+1x30
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: StatusWatchApiHighErrorRate
+    exp_alerts: []
+- name: External target failure does not imply internal engine failure
+  interval: 1m
+  input_series:
+  - series: statuswatch_monitor_checks_total{job="worker",status="DOWN"}
+    values: 0+10x30
+  - series: statuswatch_scheduler_cycles_total{job="worker",result="success"}
+    values: 0+12x30
+  promql_expr_test:
+  - expr: statuswatch:scheduler_success_ratio30d
+    eval_time: 10m
+    exp_samples:
+    - labels: statuswatch:scheduler_success_ratio30d
+      value: 1
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: StatusWatchSchedulerErrors
+    exp_alerts: []
+  - eval_time: 20m
+    alertname: StatusWatchMonitorCheckFailureRateHigh
+    exp_alerts:
+    - exp_labels:
+        severity: info
+      exp_annotations:
+        summary: Most monitored targets are DOWN
+        description: 'Product-level signal only: at least 20 checks and over 90% DOWN. Investigate target outages or shared
+          egress; this is not an engine availability SLI.'
+- name: Scheduler errors and stalled scheduler are distinct
+  interval: 1m
+  input_series:
+  - series: statuswatch_scheduler_cycles_total{job="worker",result="error"}
+    values: 0+2x30
+  - series: up{job="worker",instance="worker:9101"}
+    values: 1+0x30
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: StatusWatchSchedulerErrors
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: Scheduler cycles are failing
+        description: At least three cycle-level errors in five minutes; this is internal engine health, not a DOWN monitored
+          target.
+  - eval_time: 10m
+    alertname: StatusWatchSchedulerStalled
+    exp_alerts: []
+- name: Endpoint UP but no completed cycles
+  interval: 1m
+  input_series:
+  - series: up{job="worker",instance="worker:9101"}
+    values: 1+0x30
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: StatusWatchSchedulerStalled
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        job: worker
+        instance: worker:9101
+      exp_annotations:
+        summary: Worker responds but scheduler is not progressing
+        description: No completed scheduler cycles in five minutes despite successful scrapes. Inspect worker tasks and database.
+- name: Latency buckets and sustained high p95
+  interval: 1m
+  input_series:
+  - series: statuswatch_api_http_requests_total{job="api",method="GET",route="/monitors",status_code="200"}
+    values: 0+100x30
+  - series: statuswatch_api_http_request_duration_seconds_bucket{job="api",route="/monitors",method="GET",le="0.5"}
+    values: 0+90x30
+  - series: statuswatch_api_http_request_duration_seconds_bucket{job="api",route="/monitors",method="GET",le="1.0"}
+    values: 0+100x30
+  - series: statuswatch_api_http_request_duration_seconds_bucket{job="api",route="/monitors",method="GET",le="+Inf"}
+    values: 0+100x30
+  - series: statuswatch_api_http_request_duration_seconds_count{job="api",route="/monitors",method="GET"}
+    values: 0+100x30
+  promql_expr_test:
+  - expr: statuswatch:api_latency_good_ratio30d
+    eval_time: 10m
+    exp_samples:
+    - labels: statuswatch:api_latency_good_ratio30d
+      value: 0.9
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: StatusWatchApiHighLatency
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: API p95 above 500 ms
+        description: Response-header latency exceeds the initial lab threshold. Inspect route latency and database contention.
+- name: TargetDown sustained condition
+  interval: 1m
+  input_series:
+  - series: up{job="api",instance="api:8000"}
+    values: 0+0x20
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: TargetDown
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        job: api
+        instance: api:8000
+      exp_annotations:
+        summary: Scrape target unavailable
+        description: Prometheus cannot scrape api for two minutes. Check service health, DNS and networks.
+- name: HostMemoryPressure sustained condition
+  interval: 1m
+  input_series:
+  - series: node_memory_MemAvailable_bytes{job="node-exporter",instance="node-exporter:9100"}
+    values: 5+0x20
+  - series: node_memory_MemTotal_bytes{job="node-exporter",instance="node-exporter:9100"}
+    values: 100+0x20
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: HostMemoryPressure
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        job: node-exporter
+        instance: node-exporter:9100
+      exp_annotations:
+        summary: Host available memory below 10%
+        description: Sustained host memory pressure. Inspect container working sets and OOM events.
+- name: HostDiskSpaceLow sustained condition
+  interval: 1m
+  input_series:
+  - series: node_filesystem_avail_bytes{job="node-exporter",instance="node-exporter:9100",device="/dev/test",mountpoint="/",fstype="ext4"}
+    values: 10+0x20
+  - series: node_filesystem_size_bytes{job="node-exporter",instance="node-exporter:9100",device="/dev/test",mountpoint="/",fstype="ext4"}
+    values: 100+0x20
+  - series: node_filesystem_readonly{job="node-exporter",instance="node-exporter:9100",device="/dev/test",mountpoint="/",fstype="ext4"}
+    values: 0+0x20
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: HostDiskSpaceLow
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        job: node-exporter
+        instance: node-exporter:9100
+        device: /dev/test
+        mountpoint: /
+        fstype: ext4
+      exp_annotations:
+        summary: Host filesystem has less than 15% available
+        description: Filesystem / is running low. Check TSDB retention and Docker storage; do not delete persistent volumes
+          blindly.
+- name: StatusWatchNotificationFailureRateHigh sustained condition
+  interval: 1m
+  input_series:
+  - series: statuswatch_notification_delivery_attempts_total{job="worker",channel_type="EMAIL",outcome="error"}
+    values: 0+5x20
+  - series: statuswatch_notification_delivery_attempts_total{job="worker",channel_type="EMAIL",outcome="success"}
+    values: 0+5x20
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: StatusWatchNotificationFailureRateHigh
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+      exp_annotations:
+        summary: Notification attempts are failing
+        description: Over 20% errors with at least five attempts in ten minutes. Inspect channel configuration, terminal failures
+          and retries; cancellation is excluded.

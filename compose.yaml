@@ -94,9 +94,47 @@ services:
     networks:
       - statuswatch
 
+  prometheus:
+    extends:
+      file: observability/compose.services.yaml
+      service: prometheus
+    networks: [observability, statuswatch]
+    ports: ["127.0.0.1:9090:9090"]
+
+  alertmanager:
+    extends:
+      file: observability/compose.services.yaml
+      service: alertmanager
+    networks: [observability, observability-access]
+    ports: ["127.0.0.1:9093:9093"]
+
+  grafana:
+    extends:
+      file: observability/compose.services.yaml
+      service: grafana
+    networks: [observability, observability-access]
+    ports: ["127.0.0.1:3000:3000"]
+
+  node-exporter:
+    extends:
+      file: observability/compose.services.yaml
+      service: node-exporter
+
+  cadvisor:
+    extends:
+      file: observability/compose.services.yaml
+      service: cadvisor
+
 volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:
   postgres_data:
 
 networks:
+  observability-access:
+    driver: bridge
+  observability:
+    internal: true
   statuswatch:
     driver: bridge

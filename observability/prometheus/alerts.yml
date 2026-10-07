@@ -1,0 +1,86 @@
+groups:
+- name: statuswatch-alerts
+  rules:
+  - alert: TargetDown
+    expr: up{job=~"api|worker|node-exporter|cadvisor|prometheus|alertmanager"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: Scrape target unavailable
+      description: Prometheus cannot scrape {{ $labels.job }} for two minutes. Check service health, DNS and networks.
+  - alert: StatusWatchApiHighErrorRate
+    expr: statuswatch:api_error_ratio5m > 0.05 and statuswatch:api_request_rate5m > 0.1
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: API 5xx ratio above 5%
+      description: Eligible API traffic exceeds 0.1 requests/s with sustained server errors. Check API and dependency health.
+  - alert: StatusWatchApiHighLatency
+    expr: statuswatch:api_latency_p95_5m > 0.5 and statuswatch:api_request_rate5m > 0.1
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: API p95 above 500 ms
+      description: Response-header latency exceeds the initial lab threshold. Inspect route latency and database contention.
+  - alert: StatusWatchSchedulerErrors
+    expr: sum(increase(statuswatch_scheduler_cycles_total{job="worker",result="error"}[5m])) >= 3
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: Scheduler cycles are failing
+      description: At least three cycle-level errors in five minutes; this is internal engine health, not a DOWN monitored
+        target.
+  - alert: StatusWatchSchedulerStalled
+    expr: up{job="worker"} == 1 unless on() (sum(increase(statuswatch_scheduler_cycles_total{job="worker"}[5m])) > 0)
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: Worker responds but scheduler is not progressing
+      description: No completed scheduler cycles in five minutes despite successful scrapes. Inspect worker tasks and database.
+  - alert: StatusWatchMonitorCheckFailureRateHigh
+    expr: statuswatch:monitor_check_failure_ratio5m > 0.9 and sum(increase(statuswatch_monitor_checks_total{job="worker"}[5m]))
+      >= 20
+    for: 15m
+    labels:
+      severity: info
+    annotations:
+      summary: Most monitored targets are DOWN
+      description: 'Product-level signal only: at least 20 checks and over 90% DOWN. Investigate target outages or shared
+        egress; this is not an engine availability SLI.'
+  - alert: StatusWatchNotificationFailureRateHigh
+    expr: (((sum(rate(statuswatch_notification_delivery_attempts_total{job="worker",outcome="error"}[10m])) or (sum(rate(statuswatch_notification_delivery_attempts_total{job="worker",outcome=~"success|error"}[10m]))
+      * 0)) / clamp_min(sum(rate(statuswatch_notification_delivery_attempts_total{job="worker",outcome=~"success|error"}[10m])),
+      1e-9)) and (sum(rate(statuswatch_notification_delivery_attempts_total{job="worker",outcome=~"success|error"}[10m]))
+      > 0)) > 0.2 and sum(increase(statuswatch_notification_delivery_attempts_total{job="worker",outcome=~"success|error"}[10m]))
+      >= 5
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: Notification attempts are failing
+      description: Over 20% errors with at least five attempts in ten minutes. Inspect channel configuration, terminal failures
+        and retries; cancellation is excluded.
+  - alert: HostDiskSpaceLow
+    expr: node_filesystem_avail_bytes{job="node-exporter",fstype!~"tmpfs|overlay|squashfs|nsfs",mountpoint!~"/run.*|/var/lib/docker.*|/var/lib/containerd.*"}
+      / node_filesystem_size_bytes{job="node-exporter",fstype!~"tmpfs|overlay|squashfs|nsfs",mountpoint!~"/run.*|/var/lib/docker.*|/var/lib/containerd.*"}
+      < 0.15 and on(instance,device,mountpoint) node_filesystem_readonly{job="node-exporter"} == 0
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: Host filesystem has less than 15% available
+      description: Filesystem {{ $labels.mountpoint }} is running low. Check TSDB retention and Docker storage; do not delete
+        persistent volumes blindly.
+  - alert: HostMemoryPressure
+    expr: node_memory_MemAvailable_bytes{job="node-exporter"} / node_memory_MemTotal_bytes{job="node-exporter"} < 0.1
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: Host available memory below 10%
+      description: Sustained host memory pressure. Inspect container working sets and OOM events.

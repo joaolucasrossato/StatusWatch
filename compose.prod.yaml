@@ -149,13 +149,44 @@ services:
       - backend
 
 
+  prometheus:
+    extends:
+      file: observability/compose.services.yaml
+      service: prometheus
+    networks: [observability, backend]
+
+  alertmanager:
+    extends:
+      file: observability/compose.services.yaml
+      service: alertmanager
+
+  grafana:
+    extends:
+      file: observability/compose.services.yaml
+      service: grafana
+
+  node-exporter:
+    extends:
+      file: observability/compose.services.yaml
+      service: node-exporter
+
+  cadvisor:
+    extends:
+      file: observability/compose.services.yaml
+      service: cadvisor
+
 volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:
 
   postgres_data:
     name: statuswatch_prod_postgres_data
 
 
 networks:
+  observability:
+    internal: true
 
   frontend:
     driver: bridge
