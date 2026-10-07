@@ -1,4 +1,4 @@
-# StatusWatch · v1.0.0
+# StatusWatch
 
 StatusWatch é uma plataforma de monitoramento HTTP/HTTPS desenvolvida como
 projeto de portfólio com foco em backend, infraestrutura, DevOps,
@@ -53,6 +53,18 @@ PostgreSQL. A API disponibiliza os dados ao frontend autenticado via JWT.
                     │ HTTP Check Engine   │
                     └─────────────────────┘
 ```
+
+## Observabilidade v1.1
+
+A branch v1.1 adiciona Prometheus, Grafana com quatro dashboards provisionados,
+Node Exporter, cAdvisor e Alertmanager, além de SLIs/SLOs e error budget.
+Antes de subir a stack, configure `GRAFANA_ADMIN_PASSWORD` e confirme
+`NODE_EXPORTER_LISTEN_ADDRESS` em `.env` (veja `.env.example`). As UIs de desenvolvimento
+ficam em localhost: Grafana `3000`, Prometheus `9090`, Alertmanager `9093`.
+Em produção, permanecem internas; o Nginx bloqueia o acesso às métricas da API.
+
+Arquitetura, segurança dos exporters, queries, objetivos, testes e operação:
+[docs/observability.md](docs/observability.md).
 
 ## Requisitos
 
@@ -274,8 +286,9 @@ Implementado:
 
 - v1.0 Stable Release — consolidação, retenção e recuperação.
 
-Próximas versões: Observability, SLO/SLA, Error Budget, Public Status Pages,
-Kubernetes e GitOps. Nenhuma dessas etapas está implementada nesta release.
+- v1.1 Observability — métricas, dashboards, alerting, SLIs/SLOs e error budget nesta branch.
+
+Próximas etapas: Public Status Pages, Kubernetes e GitOps. SLA contratual não é oferecido.
 
 
 
@@ -358,8 +371,8 @@ npm run build
 
 Retenção e procedimentos operacionais estão descritos abaixo. Criptografia de
 destinos com gestão de chaves e replay controlado de entregas ficam para evolução.
-Página pública de status, SLO/SLA, billing, Kubernetes e observabilidade externa
-continuam fora desta versão.
+Página pública de status, SLA contratual, billing e Kubernetes continuam fora
+desta versão. A stack de métricas/alerting v1.1 está documentada em observability.md.
 
 
 ## Dashboard e histórico

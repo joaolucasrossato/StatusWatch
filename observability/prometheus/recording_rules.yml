@@ -1,0 +1,42 @@
+groups:
+- name: statuswatch-recordings
+  rules:
+  - record: statuswatch:api_request_rate5m
+    expr: sum(rate(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[5m]))
+  - record: statuswatch:api_error_ratio5m
+    expr: ((sum(rate(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched",status_code=~"5.."}[5m]))
+      or (sum(rate(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[5m]))
+      * 0)) / clamp_min(sum(rate(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[5m])),
+      1e-9)) and (sum(rate(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[5m]))
+      > 0)
+  - record: statuswatch:api_latency_p95_5m
+    expr: histogram_quantile(0.95, sum by (le) (rate(statuswatch_api_http_request_duration_seconds_bucket{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[5m])))
+  - record: statuswatch:monitor_check_failure_ratio5m
+    expr: ((sum(rate(statuswatch_monitor_checks_total{job="worker",status="DOWN"}[5m])) or (sum(rate(statuswatch_monitor_checks_total{job="worker"}[5m]))
+      * 0)) / clamp_min(sum(rate(statuswatch_monitor_checks_total{job="worker"}[5m])), 1e-9)) and (sum(rate(statuswatch_monitor_checks_total{job="worker"}[5m]))
+      > 0)
+  - record: statuswatch:api_error_ratio30d
+    expr: ((sum(increase(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched",status_code=~"5.."}[30d]))
+      or (sum(increase(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[30d]))
+      * 0)) / clamp_min(sum(increase(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[30d])),
+      1e-9)) and (sum(increase(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[30d]))
+      > 0)
+  - record: statuswatch:api_availability30d
+    expr: 1 - statuswatch:api_error_ratio30d
+  - record: statuswatch:api_error_budget_remaining30d
+    expr: 1 - statuswatch:api_error_ratio30d / 0.001
+  - record: statuswatch:api_burn_rate1h
+    expr: (((sum(rate(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched",status_code=~"5.."}[1h]))
+      or (sum(rate(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[1h]))
+      * 0)) / clamp_min(sum(rate(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[1h])),
+      1e-9)) and (sum(rate(statuswatch_api_http_requests_total{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[1h]))
+      > 0)) / 0.001
+  - record: statuswatch:api_latency_good_ratio30d
+    expr: (sum(increase(statuswatch_api_http_request_duration_seconds_bucket{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched",le="0.5"}[30d]))
+      / clamp_min(sum(increase(statuswatch_api_http_request_duration_seconds_count{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[30d])),
+      1e-9)) and (sum(increase(statuswatch_api_http_request_duration_seconds_count{job="api",route!~"/|/health|/docs.*|/redoc|/openapi.json|unmatched"}[30d]))
+      > 0)
+  - record: statuswatch:scheduler_success_ratio30d
+    expr: 1 - (((sum(increase(statuswatch_scheduler_cycles_total{job="worker",result="error"}[30d])) or (sum(increase(statuswatch_scheduler_cycles_total{job="worker"}[30d]))
+      * 0)) / clamp_min(sum(increase(statuswatch_scheduler_cycles_total{job="worker"}[30d])), 1e-9)) and (sum(increase(statuswatch_scheduler_cycles_total{job="worker"}[30d]))
+      > 0))
